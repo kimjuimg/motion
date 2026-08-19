@@ -28,6 +28,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // classes/{학급키} — 선생님이 만드는 학급 목록
+    match /classes/{classId} {
+      allow read: if request.auth != null;
+
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['name', 'code', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 30
+        && request.resource.data.code is string
+        && request.resource.data.code.size() > 0
+        && request.resource.data.code.size() <= 40;
+
+      // 학급 목록은 선생님이 화면에서 지울 수 있어야 하므로 삭제를 허용합니다.
+      // 쪽지(entries)와 달리 언제든 다시 만들 수 있는 설정값입니다.
+      allow delete: if request.auth != null;
+    }
+
     // 그 밖의 모든 경로는 차단합니다.
     match /{document=**} {
       allow read, write: if false;

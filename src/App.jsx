@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { isFirebaseConfigured } from "./firebase";
 import { saveMood, subscribeMoods } from "./moodStore";
+import {
+  makeClassKey,
+  removeClass,
+  saveClass,
+  subscribeClasses,
+} from "./classStore";
 
 /* ---------- 데이터 ---------- */
 
@@ -575,8 +581,249 @@ const cardBase = {
 
 /* ---------- 화면: 교사 - 코르크보드 ---------- */
 
+const ALL_CLASSES = "__all__";
+
+/* ---------- 교사 화면: 학급 선택 칩 ---------- */
+
+function ClassChip({ label, count, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className="mc-focus"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        border: active ? "1px solid #FFF6E4" : "1px solid #8E6E48",
+        background: active ? "#FFF6E4" : "rgba(255,255,255,0.08)",
+        color: active ? "#5C4126" : "#E8D9BE",
+        borderRadius: 999,
+        padding: "7px 14px",
+        fontSize: 13,
+        fontWeight: active ? 700 : 400,
+        cursor: "pointer",
+      }}
+    >
+      <span>{label}</span>
+      <span
+        style={{
+          background: active ? "#C0724A" : "rgba(255,255,255,0.15)",
+          color: active ? "#FFFDF7" : "#FFF6E4",
+          borderRadius: 999,
+          minWidth: 18,
+          textAlign: "center",
+          fontWeight: 700,
+          fontSize: 12,
+          padding: "0 6px",
+        }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/* ---------- 교사 화면: 학급 관리 패널 ---------- */
+
+function ClassManager({ classes, onClose }) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || !code.trim()) {
+      setError("학급 이름과 코드를 모두 입력해 주세요.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveClass({ name, code });
+      setName("");
+      setCode("");
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("저장에 실패했어요. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (cls) => {
+    setBusy(true);
+    try {
+      await removeClass(cls.id);
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("삭제에 실패했어요. 잠시 뒤 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const panelInput = {
+    ...inputStyle,
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid #C7A876",
+  };
+
+  return (
+    <div
+      style={{
+        background: "rgba(0,0,0,0.25)",
+        border: "1px solid #C7A876",
+        borderRadius: 16,
+        padding: "18px 18px 20px",
+        marginBottom: 22,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <h2
+          className="mc-hand"
+          style={{ color: "#FFF6E4", fontSize: 22, margin: 0 }}
+        >
+          학급 관리
+        </h2>
+        <button
+          onClick={onClose}
+          className="mc-focus"
+          style={{
+            border: "none",
+            background: "transparent",
+            color: "#E8D9BE",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          닫기 ✕
+        </button>
+      </div>
+
+      {classes.length === 0 ? (
+        <p style={{ color: "#E8D9BE", fontSize: 13, margin: "0 0 14px" }}>
+          아직 등록된 학급이 없어요. 아래에서 추가해 주세요.
+        </p>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
+          {classes.map((cls) => (
+            <div
+              key={cls.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                background: "rgba(255,255,255,0.08)",
+                borderRadius: 10,
+                padding: "9px 12px",
+              }}
+            >
+              <span style={{ color: "#FFF6E4", fontSize: 14 }}>
+                {cls.name}
+                <span
+                  style={{ color: "#E8D9BE", opacity: 0.7, marginLeft: 8 }}
+                >
+                  코드 {cls.code}
+                </span>
+              </span>
+              <button
+                onClick={() => handleRemove(cls)}
+                disabled={busy}
+                className="mc-focus"
+                style={{
+                  border: "1px solid #C08B7A",
+                  background: "transparent",
+                  color: "#F3C6B6",
+                  borderRadius: 8,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  cursor: busy ? "not-allowed" : "pointer",
+                }}
+              >
+                삭제
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form
+        onSubmit={handleAdd}
+        style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={30}
+          placeholder="학급 이름 (예: 3학년 2반)"
+          className="mc-focus"
+          style={{ ...panelInput, flex: "2 1 200px", width: "auto" }}
+        />
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          maxLength={40}
+          placeholder="코드 (예: 3-2)"
+          className="mc-focus"
+          style={{ ...panelInput, flex: "1 1 140px", width: "auto" }}
+        />
+        <button
+          type="submit"
+          disabled={busy}
+          className="mc-focus"
+          style={{
+            border: "none",
+            borderRadius: 12,
+            background: "#C0724A",
+            color: "#FFFDF7",
+            padding: "12px 20px",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: busy ? "not-allowed" : "pointer",
+          }}
+        >
+          추가
+        </button>
+      </form>
+
+      {error && (
+        <p style={{ color: "#F3C6B6", fontSize: 13, marginBottom: 0 }}>
+          {error}
+        </p>
+      )}
+
+      <p style={{ color: "#E8D9BE", fontSize: 12, opacity: 0.75, marginBottom: 0 }}>
+        학생에게는 <strong>코드</strong>를 알려주세요. 학생이 입력한 코드로 학급이 나뉩니다.
+      </p>
+    </div>
+  );
+}
+
+/* ---------- 교사 화면: 게시판 ---------- */
+
 function TeacherScreen({ onGoHome }) {
   const [entries, setEntries] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState(ALL_CLASSES);
+  const [showManager, setShowManager] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const dateKey = getTodayKey();
@@ -598,9 +845,39 @@ function TeacherScreen({ onGoHome }) {
     return stop;
   }, [dateKey]);
 
+  useEffect(() => {
+    const stop = subscribeClasses(setClasses, (err) => console.error(err));
+    return stop;
+  }, []);
+
+  // 선택한 학급이 삭제되면 전체 보기로 되돌립니다.
+  useEffect(() => {
+    if (
+      selectedClassId !== ALL_CLASSES &&
+      !classes.some((c) => c.id === selectedClassId)
+    ) {
+      setSelectedClassId(ALL_CLASSES);
+    }
+  }, [classes, selectedClassId]);
+
+  const selectedClass = classes.find((c) => c.id === selectedClassId) || null;
+
+  const visibleEntries = selectedClass
+    ? entries.filter((e) => makeClassKey(e.code) === selectedClass.id)
+    : entries;
+
+  /** 쪽지에 붙일 학급 이름. 등록되지 않은 코드는 코드 그대로 보여줍니다. */
+  const classLabelFor = (entry) => {
+    const match = classes.find((c) => c.id === makeClassKey(entry.code));
+    return match ? match.name : entry.code;
+  };
+
+  const countForClass = (cls) =>
+    entries.filter((e) => makeClassKey(e.code) === cls.id).length;
+
   const counts = EMOTIONS.map((emo) => ({
     ...emo,
-    count: entries.filter((e) => e.emotionId === emo.id).length,
+    count: visibleEntries.filter((e) => e.emotionId === emo.id).length,
   }));
 
   return (
@@ -631,7 +908,9 @@ function TeacherScreen({ onGoHome }) {
               오늘의 마음 게시판
             </h1>
             <p style={{ color: "#E8D9BE", fontSize: 13, marginTop: 4 }}>
-              {getTodayLabel()} · 총 {entries.length}명 전달
+              {getTodayLabel()} ·{" "}
+              {selectedClass ? `${selectedClass.name} ` : "전체 "}
+              {visibleEntries.length}명 전달
               <span style={{ marginLeft: 8, opacity: 0.75 }}>
                 · 실시간으로 자동 업데이트돼요
               </span>
@@ -653,6 +932,55 @@ function TeacherScreen({ onGoHome }) {
             ← 처음 화면으로
           </button>
         </div>
+
+        {/* 학급 선택 */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 18,
+          }}
+        >
+          <ClassChip
+            label="전체"
+            count={entries.length}
+            active={selectedClassId === ALL_CLASSES}
+            onClick={() => setSelectedClassId(ALL_CLASSES)}
+          />
+          {classes.map((cls) => (
+            <ClassChip
+              key={cls.id}
+              label={cls.name}
+              count={countForClass(cls)}
+              active={selectedClassId === cls.id}
+              onClick={() => setSelectedClassId(cls.id)}
+            />
+          ))}
+          <button
+            onClick={() => setShowManager((v) => !v)}
+            className="mc-focus"
+            style={{
+              border: "1px dashed #C7A876",
+              background: "transparent",
+              color: "#E8D9BE",
+              borderRadius: 999,
+              padding: "7px 14px",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            ⚙️ 학급 관리
+          </button>
+        </div>
+
+        {showManager && (
+          <ClassManager
+            classes={classes}
+            onClose={() => setShowManager(false)}
+          />
+        )}
 
         {/* 통계 바 */}
         <div
@@ -700,7 +1028,7 @@ function TeacherScreen({ onGoHome }) {
 
         {loading ? (
           <p style={{ color: "#E8D9BE" }}>불러오는 중...</p>
-        ) : entries.length === 0 ? (
+        ) : visibleEntries.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -709,7 +1037,9 @@ function TeacherScreen({ onGoHome }) {
               fontSize: 15,
             }}
           >
-            아직 전달된 마음이 없어요. 학생들이 입장하면 여기에 쌓여요.
+            {selectedClass
+              ? `${selectedClass.name}에서 아직 전달된 마음이 없어요. 학생들에게 코드 ${selectedClass.code} 를 알려주세요.`
+              : "아직 전달된 마음이 없어요. 학생들이 입장하면 여기에 쌓여요."}
           </div>
         ) : (
           <div
@@ -720,7 +1050,7 @@ function TeacherScreen({ onGoHome }) {
               justifyContent: "flex-start",
             }}
           >
-            {entries.map((entry, i) => {
+            {visibleEntries.map((entry, i) => {
               const emotion = EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
               return (
                 <div
@@ -761,6 +1091,19 @@ function TeacherScreen({ onGoHome }) {
                   </div>
                   <div style={{ fontSize: 12, color: "#5B4A30", opacity: 0.85 }}>
                     {emotion.label}
+                    {!selectedClass && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          background: "rgba(0,0,0,0.12)",
+                          borderRadius: 999,
+                          padding: "1px 7px",
+                          fontSize: 11,
+                        }}
+                      >
+                        {classLabelFor(entry)}
+                      </span>
+                    )}
                   </div>
                   {entry.reason && (
                     <div
