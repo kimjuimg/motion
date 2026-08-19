@@ -24,8 +24,12 @@ const FALLBACK_EMOTION = {
   color: "#D6C6A8",
 };
 
-/** 선생님 화면 진입 코드. 환경변수 VITE_TEACHER_CODE 로 바꿀 수 있습니다. */
-const TEACHER_CODE = import.meta.env.VITE_TEACHER_CODE || "1234";
+/**
+ * 선생님 화면 진입 코드.
+ * 이 값은 브라우저 번들에 포함되므로 진짜 보안 장치가 아니라 교실용 칸막이입니다.
+ * 바꾸려면 아래 기본값을 수정하거나, 배포 환경변수 VITE_TEACHER_CODE 를 설정하세요.
+ */
+const TEACHER_CODE = import.meta.env.VITE_TEACHER_CODE || "motion2026";
 const NOTE_ROTATIONS = [-4, 3, -6, 2, 5, -2, 4, -3, 1, -5, 6, -1];
 
 function getTodayKey() {

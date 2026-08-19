@@ -24,6 +24,17 @@
 
 ```bash
 npm install
+npm run dev
+```
+
+이 저장소는 `src/firebase.js` 에 Firebase 프로젝트 `motion-d1693` 의 설정값이 기본값으로
+들어 있어서, 별도 설정 없이 바로 실행됩니다. Firebase 웹 설정값은 비밀이 아닙니다 —
+어떻게 배포하든 브라우저가 받아가는 JS 번들에 그대로 포함되는 공개 값이고,
+실제 데이터 보호는 3단계의 Firestore 보안 규칙이 담당합니다.
+
+**다른 Firebase 프로젝트를 쓰고 싶을 때만** `.env` 로 덮어쓰면 됩니다.
+
+```bash
 cp .env.example .env
 ```
 
@@ -66,17 +77,23 @@ gh repo create mood-checkin --public --source=. --push
 ## 5. Vercel에 배포하기
 
 1. <https://vercel.com> 에 **GitHub 계정으로 로그인**
-2. **Add New… › Project** → 방금 만든 `mood-checkin` 저장소 **Import**
+2. **Add New… › Project** → 이 저장소 **Import**
 3. Framework Preset이 **Vite** 로 자동 인식되는지 확인 (빌드 명령 `npm run build`, 출력 폴더 `dist`)
-4. **Environment Variables** 에 `.env` 에 넣은 값 7개를 그대로 추가
-5. **Deploy** → 1~2분 뒤 `https://mood-checkin-xxx.vercel.app` 주소가 나옵니다
+4. **Deploy** → 1~2분 뒤 주소가 나옵니다
+
+환경변수는 넣지 않아도 됩니다. 설정값이 소스에 기본값으로 들어 있습니다.
 
 이후에는 `git push` 만 하면 Vercel이 자동으로 다시 배포합니다.
+
+**배포된 주소**: <https://motion-five-chi.vercel.app>
 
 ## 6. 수업에서 쓰는 법
 
 - 학생: 배포 주소 접속 → 이름 + 오늘의 반 코드 입력 → 감정 선택 → 전달
 - 선생님: 같은 주소 → **선생님이신가요?** → 교사 코드 입력 → 게시판이 실시간으로 채워짐
+
+교사 코드 기본값은 `motion2026` 입니다. 바꾸려면 `src/App.jsx` 의 `TEACHER_CODE` 기본값을
+수정하고 push 하세요.
 
 ---
 
