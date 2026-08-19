@@ -36,7 +36,38 @@ const FALLBACK_EMOTION = {
  * 바꾸려면 아래 기본값을 수정하거나, 배포 환경변수 VITE_TEACHER_CODE 를 설정하세요.
  */
 const TEACHER_CODE = import.meta.env.VITE_TEACHER_CODE || "motion2026";
-const NOTE_ROTATIONS = [-4, 3, -6, 2, 5, -2, 4, -3, 1, -5, 6, -1];
+/** 감정 목록에 적힌 순서. 감정순 정렬에서 같은 감정끼리 묶는 데 씁니다. */
+const EMOTION_ORDER = Object.fromEntries(EMOTIONS.map((e, i) => [e.id, i]));
+
+const SORT_OPTIONS = [
+  { id: "recent", label: "최신순" },
+  { id: "name", label: "이름순" },
+  { id: "emotion", label: "감정순" },
+];
+
+const thStyle = {
+  textAlign: "left",
+  padding: "12px 14px",
+  color: "#7A4F2B",
+  fontSize: 13,
+  fontWeight: 700,
+  whiteSpace: "nowrap",
+};
+
+const tdStyle = {
+  padding: "11px 14px",
+  verticalAlign: "middle",
+};
+
+/** Firestore 타임스탬프를 '오후 2:31' 형태로 바꿉니다. */
+function formatTime(timestamp) {
+  const date = timestamp?.toDate?.();
+  if (!date) return "—";
+  return date.toLocaleTimeString("ko-KR", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function getTodayKey() {
   const d = new Date();
@@ -66,17 +97,13 @@ function GlobalStyle() {
       .mc-emo-btn { transition: transform 0.15s ease, box-shadow 0.15s ease; }
       .mc-emo-btn:hover { transform: translateY(-3px); }
       @media (prefers-reduced-motion: reduce) {
-        .mc-emo-btn, .mc-note { transition: none !important; animation: none !important; }
+        .mc-emo-btn { transition: none !important; animation: none !important; }
       }
-      .mc-note {
-        transition: transform 0.2s ease;
-      }
-      .mc-note:hover { transform: scale(1.04) rotate(0deg) !important; z-index: 5; }
       @keyframes mc-pop {
         0% { transform: scale(0.85); opacity: 0; }
         100% { transform: scale(1); opacity: 1; }
       }
-      .mc-scrollbar::-webkit-scrollbar { width: 10px; }
+      .mc-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
       .mc-scrollbar::-webkit-scrollbar-thumb { background: #A9825C; border-radius: 8px; }
     `}</style>
   );
@@ -867,6 +894,7 @@ function TeacherScreen({ onGoHome }) {
   const [classes, setClasses] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState(ALL_CLASSES);
   const [showManager, setShowManager] = useState(false);
+  const [sortBy, setSortBy] = useState("recent");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const dateKey = getTodayKey();
@@ -922,6 +950,21 @@ function TeacherScreen({ onGoHome }) {
     ...emo,
     count: visibleEntries.filter((e) => e.emotionId === emo.id).length,
   }));
+
+  // 최신순은 moodStore 에서 이미 정렬해 오므로 그대로 둡니다.
+  const sortedEntries = [...visibleEntries].sort((a, b) => {
+    if (sortBy === "name") {
+      return String(a.name).localeCompare(String(b.name), "ko");
+    }
+    if (sortBy === "emotion") {
+      const diff =
+        (EMOTION_ORDER[a.emotionId] ?? 99) - (EMOTION_ORDER[b.emotionId] ?? 99);
+      return diff !== 0
+        ? diff
+        : String(a.name).localeCompare(String(b.name), "ko");
+    }
+    return 0;
+  });
 
   return (
     <div
@@ -1085,86 +1128,150 @@ function TeacherScreen({ onGoHome }) {
               : "아직 전달된 마음이 없어요. 학생들이 입장하면 여기에 쌓여요."}
           </div>
         ) : (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 18,
-              justifyContent: "flex-start",
-            }}
-          >
-            {visibleEntries.map((entry, i) => {
-              const emotion = EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
-              return (
-                <div
-                  key={entry.id}
-                  className="mc-note"
+          <>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span style={{ color: "#E8D9BE", fontSize: 13, opacity: 0.8 }}>
+                정렬
+              </span>
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setSortBy(opt.id)}
+                  aria-pressed={sortBy === opt.id}
+                  className="mc-focus"
                   style={{
-                    width: 168,
-                    minHeight: 150,
-                    background: emotion.color,
-                    borderRadius: 4,
-                    padding: "16px 14px 14px",
-                    boxShadow: "0 8px 16px rgba(0,0,0,0.28)",
-                    transform: `rotate(${
-                      NOTE_ROTATIONS[i % NOTE_ROTATIONS.length]
-                    }deg)`,
-                    position: "relative",
+                    border:
+                      sortBy === opt.id
+                        ? "1px solid #FFF6E4"
+                        : "1px solid #8E6E48",
+                    background:
+                      sortBy === opt.id ? "#FFF6E4" : "rgba(255,255,255,0.08)",
+                    color: sortBy === opt.id ? "#5C4126" : "#E8D9BE",
+                    fontWeight: sortBy === opt.id ? 700 : 400,
+                    borderRadius: 999,
+                    padding: "5px 13px",
+                    fontSize: 12,
+                    cursor: "pointer",
                   }}
                 >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: -8,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: "#B23B3B",
-                      boxShadow: "0 2px 3px rgba(0,0,0,0.4)",
-                    }}
-                  />
-                  <div style={{ fontSize: 30 }}>{emotion.emoji}</div>
-                  <div
-                    className="mc-hand"
-                    style={{ fontSize: 18, color: "#4A3418", marginTop: 4 }}
-                  >
-                    {entry.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#5B4A30", opacity: 0.85 }}>
-                    {emotion.label}
-                    {!selectedClass && (
-                      <span
-                        style={{
-                          marginLeft: 6,
-                          background: "rgba(0,0,0,0.12)",
-                          borderRadius: 999,
-                          padding: "1px 7px",
-                          fontSize: 11,
-                        }}
-                      >
-                        {classLabelFor(entry)}
-                      </span>
-                    )}
-                  </div>
-                  {entry.reason && (
-                    <div
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div
+            className="mc-scrollbar"
+            style={{
+              background: "#FFFDF7",
+              borderRadius: 14,
+              overflowX: "auto",
+              boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+                minWidth: 640,
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#F1E6CE" }}>
+                  <th style={thStyle}>감정</th>
+                  <th style={thStyle}>이름</th>
+                  {!selectedClass && <th style={thStyle}>반</th>}
+                  <th style={thStyle}>이유</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>시간</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedEntries.map((entry, i) => {
+                  const emotion =
+                    EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
+                  return (
+                    <tr
+                      key={entry.id}
                       style={{
-                        fontSize: 12,
-                        color: "#4A3418",
-                        marginTop: 8,
-                        lineHeight: 1.4,
-                        wordBreak: "break-word",
+                        background: i % 2 ? "#FBF6E9" : "#FFFDF7",
+                        borderTop: "1px solid #EFE3C8",
                       }}
                     >
-                      “{entry.reason}”
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            background: emotion.color,
+                            color: "#4A3418",
+                            borderRadius: 999,
+                            padding: "4px 11px",
+                            fontWeight: 700,
+                            fontSize: 13,
+                          }}
+                        >
+                          <span style={{ fontSize: 16 }}>{emotion.emoji}</span>
+                          {emotion.label}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          fontWeight: 700,
+                          color: "#5B4A30",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {entry.name}
+                      </td>
+                      {!selectedClass && (
+                        <td
+                          style={{
+                            ...tdStyle,
+                            color: "#9C8A6E",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {classLabelFor(entry)}
+                        </td>
+                      )}
+                      <td
+                        style={{
+                          ...tdStyle,
+                          color: "#5B4A30",
+                          lineHeight: 1.5,
+                          minWidth: 200,
+                        }}
+                      >
+                        {entry.reason || (
+                          <span style={{ color: "#C4B593" }}>—</span>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          color: "#9C8A6E",
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatTime(entry.updatedAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+          </>
         )}
       </div>
     </div>
