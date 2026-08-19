@@ -114,15 +114,31 @@ function LoginScreen({ onEnter }) {
   const [goTeacher, setGoTeacher] = useState(false);
   const [teacherCodeInput, setTeacherCodeInput] = useState("");
   const [teacherError, setTeacherError] = useState("");
+  const [classes, setClasses] = useState([]);
+
+  // 등록된 반 목록을 받아와서, 학생이 친 코드가 어느 반인지 바로 보여줍니다.
+  useEffect(() => {
+    const stop = subscribeClasses(setClasses, (err) => console.error(err));
+    return stop;
+  }, []);
+
+  const typedCode = code.trim();
+  const matchedClass =
+    typedCode && classes.find((c) => c.id === makeClassKey(typedCode));
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim() || !code.trim()) {
-      setError("이름과 코드를 모두 입력해 주세요.");
+    if (!name.trim() || !typedCode) {
+      setError("이름과 반 코드를 모두 입력해 주세요.");
       return;
     }
     setError("");
-    onEnter({ role: "student", name: name.trim(), code: code.trim() });
+    onEnter({
+      role: "student",
+      name: name.trim(),
+      code: typedCode,
+      className: matchedClass ? matchedClass.name : "",
+    });
   };
 
   const handleTeacherSubmit = (e) => {
@@ -168,7 +184,7 @@ function LoginScreen({ onEnter }) {
                 오늘의 기분 체크인
               </h1>
               <p style={{ color: "#9C8A6E", fontSize: 14, marginTop: 6 }}>
-                이름과 코드를 입력하고 들어와요
+                이름과 우리 반 코드를 입력하고 들어와요
               </p>
             </div>
 
@@ -200,16 +216,42 @@ function LoginScreen({ onEnter }) {
                   margin: "16px 0 6px",
                 }}
               >
-                코드
+                우리 반
               </label>
               <input
                 className="mc-focus"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 maxLength={40}
-                placeholder="선생님이 알려준 코드"
+                placeholder="선생님이 알려준 반 코드 (예: 3-2)"
                 style={inputStyle}
               />
+
+              {matchedClass ? (
+                <p
+                  style={{
+                    color: "#5E7A4E",
+                    fontSize: 13,
+                    margin: "8px 0 0",
+                  }}
+                >
+                  ✓ 우리 반: <strong>{matchedClass.name}</strong>
+                </p>
+              ) : (
+                typedCode &&
+                classes.length > 0 && (
+                  <p
+                    style={{
+                      color: "#A8845C",
+                      fontSize: 13,
+                      margin: "8px 0 0",
+                    }}
+                  >
+                    등록된 반 코드가 아니에요. 선생님이 알려준 코드가 맞는지
+                    확인해 주세요.
+                  </p>
+                )
+              )}
 
               {error && (
                 <p style={{ color: "#C0553A", fontSize: 13, marginTop: 10 }}>
@@ -440,6 +482,7 @@ function StudentScreen({ student, onGoHome }) {
       <div style={{ ...cardBase, maxWidth: 480 }}>
         <p style={{ color: "#9C8A6E", fontSize: 13, marginBottom: 2 }}>
           {getTodayLabel()}
+          {student.className && ` · ${student.className}`}
         </p>
         <h1
           className="mc-hand"
