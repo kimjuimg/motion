@@ -887,6 +887,164 @@ function ClassManager({ classes, onClose }) {
   );
 }
 
+/* ---------- 교사 화면: 감정 통계 ---------- */
+
+/**
+ * 감정별 인원수 칩.
+ * compact 를 켜면 인원이 0인 감정은 빼고 보여줍니다 (반별 요약용).
+ */
+function EmotionSummary({ entries, compact = false }) {
+  const counts = EMOTIONS.map((emo) => ({
+    ...emo,
+    count: entries.filter((e) => e.emotionId === emo.id).length,
+  })).filter((c) => !compact || c.count > 0);
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? 6 : 8 }}>
+      {counts.map((c) => (
+        <div
+          key={c.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "rgba(255,255,255,0.1)",
+            borderRadius: 999,
+            padding: compact ? "4px 10px" : "6px 12px",
+            fontSize: compact ? 12 : 13,
+            color: "#FFF6E4",
+          }}
+        >
+          <span>{c.emoji}</span>
+          <span style={{ opacity: 0.85 }}>{c.label}</span>
+          <span
+            style={{
+              background: c.color,
+              color: "#4A3418",
+              borderRadius: 999,
+              minWidth: 18,
+              textAlign: "center",
+              fontWeight: 700,
+              padding: "0 6px",
+            }}
+          >
+            {c.count}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- 교사 화면: 기록 표 ---------- */
+
+function EntryTable({ entries, showClassColumn, classLabelFor }) {
+  return (
+    <div
+      className="mc-scrollbar"
+      style={{
+        background: "#FFFDF7",
+        borderRadius: 14,
+        overflowX: "auto",
+        boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          fontSize: 14,
+          minWidth: showClassColumn ? 640 : 540,
+        }}
+      >
+        <thead>
+          <tr style={{ background: "#F1E6CE" }}>
+            <th style={thStyle}>감정</th>
+            <th style={thStyle}>이름</th>
+            {showClassColumn && <th style={thStyle}>반</th>}
+            <th style={thStyle}>이유</th>
+            <th style={{ ...thStyle, textAlign: "right" }}>시간</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, i) => {
+            const emotion = EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
+            return (
+              <tr
+                key={entry.id}
+                style={{
+                  background: i % 2 ? "#FBF6E9" : "#FFFDF7",
+                  borderTop: "1px solid #EFE3C8",
+                }}
+              >
+                <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: emotion.color,
+                      color: "#4A3418",
+                      borderRadius: 999,
+                      padding: "4px 11px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>{emotion.emoji}</span>
+                    {emotion.label}
+                  </span>
+                </td>
+                <td
+                  style={{
+                    ...tdStyle,
+                    fontWeight: 700,
+                    color: "#5B4A30",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {entry.name}
+                </td>
+                {showClassColumn && (
+                  <td
+                    style={{
+                      ...tdStyle,
+                      color: "#9C8A6E",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {classLabelFor(entry)}
+                  </td>
+                )}
+                <td
+                  style={{
+                    ...tdStyle,
+                    color: "#5B4A30",
+                    lineHeight: 1.5,
+                    minWidth: 200,
+                  }}
+                >
+                  {entry.reason || <span style={{ color: "#C4B593" }}>—</span>}
+                </td>
+                <td
+                  style={{
+                    ...tdStyle,
+                    color: "#9C8A6E",
+                    textAlign: "right",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatTime(entry.updatedAt)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ---------- 교사 화면: 게시판 ---------- */
 
 function TeacherScreen({ onGoHome }) {
@@ -946,11 +1104,6 @@ function TeacherScreen({ onGoHome }) {
   const countForClass = (cls) =>
     entries.filter((e) => makeClassKey(e.code) === cls.id).length;
 
-  const counts = EMOTIONS.map((emo) => ({
-    ...emo,
-    count: visibleEntries.filter((e) => e.emotionId === emo.id).length,
-  }));
-
   // 최신순은 moodStore 에서 이미 정렬해 오므로 그대로 둡니다.
   const sortedEntries = [...visibleEntries].sort((a, b) => {
     if (sortBy === "name") {
@@ -965,6 +1118,35 @@ function TeacherScreen({ onGoHome }) {
     }
     return 0;
   });
+
+  /**
+   * 전체 보기에서 기록을 반별로 묶습니다.
+   * 등록되지 않은 코드도 그 코드 자체를 하나의 묶음으로 만들어서,
+   * 학급을 등록하기 전에도 반별로 나뉘어 보입니다.
+   * 등록된 학급을 먼저, 그다음 인원이 많은 순서로 배치합니다.
+   */
+  const classGroups = [];
+  if (!selectedClass) {
+    const byKey = new Map();
+    for (const entry of sortedEntries) {
+      const key = makeClassKey(entry.code);
+      if (!byKey.has(key)) {
+        const registered = classes.find((c) => c.id === key);
+        byKey.set(key, {
+          key,
+          label: registered ? registered.name : entry.code,
+          registered: Boolean(registered),
+          entries: [],
+        });
+      }
+      byKey.get(key).entries.push(entry);
+    }
+    classGroups.push(...byKey.values());
+    classGroups.sort((a, b) => {
+      if (a.registered !== b.registered) return a.registered ? -1 : 1;
+      return b.entries.length - a.entries.length;
+    });
+  }
 
   return (
     <div
@@ -1068,46 +1250,9 @@ function TeacherScreen({ onGoHome }) {
           />
         )}
 
-        {/* 통계 바 */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            marginBottom: 26,
-          }}
-        >
-          {counts.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "rgba(255,255,255,0.1)",
-                borderRadius: 999,
-                padding: "6px 12px",
-                fontSize: 13,
-                color: "#FFF6E4",
-              }}
-            >
-              <span>{c.emoji}</span>
-              <span style={{ opacity: 0.85 }}>{c.label}</span>
-              <span
-                style={{
-                  background: c.color,
-                  color: "#4A3418",
-                  borderRadius: 999,
-                  minWidth: 20,
-                  textAlign: "center",
-                  fontWeight: 700,
-                  padding: "0 6px",
-                }}
-              >
-                {c.count}
-              </span>
-            </div>
-          ))}
+        {/* 전체 통계 바 */}
+        <div style={{ marginBottom: 26 }}>
+          <EmotionSummary entries={visibleEntries} />
         </div>
 
         {error && <p style={{ color: "#F3C6B6", marginBottom: 14 }}>{error}</p>}
@@ -1166,111 +1311,62 @@ function TeacherScreen({ onGoHome }) {
               ))}
             </div>
 
-            <div
-            className="mc-scrollbar"
-            style={{
-              background: "#FFFDF7",
-              borderRadius: 14,
-              overflowX: "auto",
-              boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 14,
-                minWidth: 640,
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#F1E6CE" }}>
-                  <th style={thStyle}>감정</th>
-                  <th style={thStyle}>이름</th>
-                  {!selectedClass && <th style={thStyle}>반</th>}
-                  <th style={thStyle}>이유</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>시간</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedEntries.map((entry, i) => {
-                  const emotion =
-                    EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
-                  return (
-                    <tr
-                      key={entry.id}
+            {selectedClass ? (
+              <EntryTable
+                entries={sortedEntries}
+                showClassColumn={false}
+                classLabelFor={classLabelFor}
+              />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                {classGroups.map((group) => (
+                  <section key={group.key}>
+                    <div
                       style={{
-                        background: i % 2 ? "#FBF6E9" : "#FFFDF7",
-                        borderTop: "1px solid #EFE3C8",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 10,
+                        marginBottom: 10,
                       }}
                     >
-                      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                      <h2
+                        className="mc-hand"
+                        style={{ color: "#FFF6E4", fontSize: 24, margin: 0 }}
+                      >
+                        {group.label}
+                      </h2>
+                      <span
+                        style={{ color: "#E8D9BE", fontSize: 13, opacity: 0.85 }}
+                      >
+                        {group.entries.length}명
+                      </span>
+                      {!group.registered && (
                         <span
+                          title="학급 관리에서 이 코드로 반을 등록하면 반 이름으로 표시됩니다"
                           style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            background: emotion.color,
-                            color: "#4A3418",
+                            border: "1px dashed #C7A876",
+                            color: "#E8D9BE",
                             borderRadius: 999,
-                            padding: "4px 11px",
-                            fontWeight: 700,
-                            fontSize: 13,
+                            padding: "2px 9px",
+                            fontSize: 11,
+                            opacity: 0.85,
                           }}
                         >
-                          <span style={{ fontSize: 16 }}>{emotion.emoji}</span>
-                          {emotion.label}
+                          미등록 코드
                         </span>
-                      </td>
-                      <td
-                        style={{
-                          ...tdStyle,
-                          fontWeight: 700,
-                          color: "#5B4A30",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {entry.name}
-                      </td>
-                      {!selectedClass && (
-                        <td
-                          style={{
-                            ...tdStyle,
-                            color: "#9C8A6E",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {classLabelFor(entry)}
-                        </td>
                       )}
-                      <td
-                        style={{
-                          ...tdStyle,
-                          color: "#5B4A30",
-                          lineHeight: 1.5,
-                          minWidth: 200,
-                        }}
-                      >
-                        {entry.reason || (
-                          <span style={{ color: "#C4B593" }}>—</span>
-                        )}
-                      </td>
-                      <td
-                        style={{
-                          ...tdStyle,
-                          color: "#9C8A6E",
-                          textAlign: "right",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatTime(entry.updatedAt)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
+                      <EmotionSummary entries={group.entries} compact />
+                    </div>
+                    <EntryTable
+                      entries={group.entries}
+                      showClassColumn={false}
+                      classLabelFor={classLabelFor}
+                    />
+                  </section>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
