@@ -2,8 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  // GitHub Pages 는 https://kimjuimg.github.io/motion/ 처럼 저장소 이름이 붙은
-  // 하위 경로로 서비스되므로, 빌드 결과의 자원 경로도 그 경로를 기준으로 잡습니다.
-  base: "/motion/",
+  // 상대 경로로 빌드해서 어느 위치에 올려도 자원을 찾게 합니다.
+  // GitHub Pages 는 하위 경로(/motion/)로, Vercel 은 루트(/)로 서비스되는데
+  // "./" 면 한 번의 빌드 결과가 두 곳 모두에서 동작합니다.
+  base: "./",
   plugins: [react()],
 });
