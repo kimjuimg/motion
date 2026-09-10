@@ -11,12 +11,12 @@ import { getAuth, signInAnonymously } from "firebase/auth";
  * 다른 Firebase 프로젝트를 쓰고 싶으면 .env 파일이나 배포 환경변수로 덮어쓰면 됩니다.
  */
 const DEFAULT_CONFIG = {
-  apiKey: "AIzaSyDQcpAki7J3iVYZ5-l_DjpV7KzziNqV-1Y",
-  authDomain: "motion-d1693.firebaseapp.com",
-  projectId: "motion-d1693",
-  storageBucket: "motion-d1693.firebasestorage.app",
-  messagingSenderId: "349400820350",
-  appId: "1:349400820350:web:866bf828eefa0a8681c62f",
+  apiKey: "AIzaSyCH9VxbeqvfRZVpOb3TV8fa2fhHYltaijE",
+  authDomain: "mood-checkin-b5d7c.firebaseapp.com",
+  projectId: "mood-checkin-b5d7c",
+  storageBucket: "mood-checkin-b5d7c.firebasestorage.app",
+  messagingSenderId: "143893323373",
+  appId: "1:143893323373:web:0c9edd5ed4c5775a96e964",
 };
 
 const firebaseConfig = {
