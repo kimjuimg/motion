@@ -23,6 +23,59 @@ const EMOTIONS = [
 ];
 
 const EMOTION_BY_ID = Object.fromEntries(EMOTIONS.map((e) => [e.id, e]));
+
+/**
+ * 에러를 화면에 보여줄 문장으로 바꿉니다.
+ * 자주 나오는 원인은 한국어로 풀어 주고, 원래 코드는 항상 함께 보여 줍니다.
+ * 원인을 짐작으로만 안내하면 엉뚱한 곳을 고치게 되기 때문입니다.
+ */
+const ERROR_HINTS = {
+  "auth/api-key-not-valid.-please-pass-a-valid-api-key.":
+    "Firebase 설정이 더 이상 유효하지 않습니다. 프로젝트가 지워졌거나 API 키가 바뀐 것 같아요.",
+  "auth/invalid-api-key":
+    "Firebase API 키가 올바르지 않습니다. src/firebase.js 의 설정값을 확인해 주세요.",
+  "auth/admin-restricted-operation":
+    "Firebase 콘솔에서 익명 로그인이 꺼져 있습니다. Authentication 에서 켜 주세요.",
+  "auth/unauthorized-domain":
+    "이 주소가 Firebase 승인된 도메인 목록에 없습니다. Authentication > 설정에서 추가해 주세요.",
+  "auth/network-request-failed":
+    "인터넷 연결이 끊겼거나 학교 방화벽에 막혀 있습니다.",
+  "permission-denied":
+    "Firestore 보안 규칙이 접근을 막고 있습니다. firestore.rules 가 배포되었는지 확인해 주세요.",
+  unavailable: "Firestore 서버에 닿지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+  "failed-precondition":
+    "Firestore 데이터베이스가 아직 만들어지지 않았을 수 있습니다.",
+  "not-found": "Firestore 데이터베이스를 찾지 못했습니다.",
+};
+
+function describeError(err) {
+  const code = (err && (err.code || err.name)) || "unknown";
+  const hint = ERROR_HINTS[code] || "인터넷 연결과 Firebase 설정을 확인해 주세요.";
+  return { hint, code };
+}
+
+/** 에러 안내 문단. 설명 아래에 코드를 작게 붙여 그대로 읽어 전달할 수 있게 합니다. */
+function ErrorNote({ lead, error, color, style }) {
+  const { hint, code } = describeError(error);
+  return (
+    <p
+      style={{
+        color: color || "#C0553A",
+        fontSize: 13,
+        marginTop: 10,
+        lineHeight: 1.5,
+        ...style,
+      }}
+    >
+      {lead} {hint}
+      <br />
+      <span style={{ opacity: 0.75, fontSize: 12, fontFamily: "monospace" }}>
+        오류 코드: {code}
+      </span>
+    </p>
+  );
+}
+
 const FALLBACK_EMOTION = {
   id: "unknown",
   emoji: "❔",
@@ -415,6 +468,7 @@ function StudentScreen({ student, onGoHome }) {
   const [selected, setSelected] = useState(null);
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState("idle"); // idle | saving | done | error
+  const [saveError, setSaveError] = useState(null);
   const dateKey = getTodayKey();
 
   const handleSubmit = async () => {
@@ -431,6 +485,7 @@ function StudentScreen({ student, onGoHome }) {
       setStatus("done");
     } catch (e) {
       console.error(e);
+      setSaveError(e);
       setStatus("error");
     }
   };
@@ -582,9 +637,7 @@ function StudentScreen({ student, onGoHome }) {
         />
 
         {status === "error" && (
-          <p style={{ color: "#C0553A", fontSize: 13, marginTop: 10 }}>
-            전달에 실패했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.
-          </p>
+          <ErrorNote lead="전달에 실패했어요." error={saveError} />
         )}
 
         <button
@@ -716,7 +769,7 @@ function ClassManager({ classes, onClose }) {
       setError("");
     } catch (err) {
       console.error(err);
-      setError("저장에 실패했어요. 잠시 뒤 다시 시도해 주세요.");
+      setError({ lead: "저장에 실패했어요.", error: err });
     } finally {
       setBusy(false);
     }
@@ -729,7 +782,7 @@ function ClassManager({ classes, onClose }) {
       setError("");
     } catch (err) {
       console.error(err);
-      setError("삭제에 실패했어요. 잠시 뒤 다시 시도해 주세요.");
+      setError({ lead: "삭제에 실패했어요.", error: err });
     } finally {
       setBusy(false);
     }
@@ -874,11 +927,19 @@ function ClassManager({ classes, onClose }) {
         </button>
       </form>
 
-      {error && (
-        <p style={{ color: "#F3C6B6", fontSize: 13, marginBottom: 0 }}>
-          {error}
-        </p>
-      )}
+      {error &&
+        (typeof error === "string" ? (
+          <p style={{ color: "#F3C6B6", fontSize: 13, marginBottom: 0 }}>
+            {error}
+          </p>
+        ) : (
+          <ErrorNote
+            lead={error.lead}
+            error={error.error}
+            color="#F3C6B6"
+            style={{ marginTop: 0, marginBottom: 0 }}
+          />
+        ))}
 
       <p style={{ color: "#E8D9BE", fontSize: 12, opacity: 0.75, marginBottom: 0 }}>
         학생에게는 <strong>코드</strong>를 알려주세요. 학생이 입력한 코드로 학급이 나뉩니다.
@@ -1054,7 +1115,8 @@ function TeacherScreen({ onGoHome }) {
   const [showManager, setShowManager] = useState(false);
   const [sortBy, setSortBy] = useState("recent");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // 실패했을 때만 { lead, error } 를 담습니다. 성공하면 다시 null 로 비웁니다.
+  const [error, setError] = useState(null);
   const dateKey = getTodayKey();
 
   useEffect(() => {
@@ -1062,12 +1124,12 @@ function TeacherScreen({ onGoHome }) {
       dateKey,
       (list) => {
         setEntries(list);
-        setError("");
+        setError(null);
         setLoading(false);
       },
       (err) => {
         console.error(err);
-        setError("불러오지 못했어요. 인터넷 연결과 Firestore 보안 규칙을 확인해 주세요.");
+        setError({ lead: "불러오지 못했어요.", error: err });
         setLoading(false);
       }
     );
@@ -1255,7 +1317,14 @@ function TeacherScreen({ onGoHome }) {
           <EmotionSummary entries={visibleEntries} />
         </div>
 
-        {error && <p style={{ color: "#F3C6B6", marginBottom: 14 }}>{error}</p>}
+        {error && (
+          <ErrorNote
+            lead={error.lead}
+            error={error.error}
+            color="#F3C6B6"
+            style={{ marginTop: 0, marginBottom: 14 }}
+          />
+        )}
 
         {loading ? (
           <p style={{ color: "#E8D9BE" }}>불러오는 중...</p>
