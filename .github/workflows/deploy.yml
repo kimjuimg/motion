@@ -16,28 +16,33 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# ubuntu-latest 는 2026-10-19 부터 Ubuntu 26 으로 옮겨갑니다. 어느 날 갑자기
+# 빌드 환경이 바뀌지 않도록 두 job 모두 버전을 못 박아 둡니다.
+# 나중에 이 버전이 낡으면 숫자만 올리면 됩니다.
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # 로컬 개발 환경과 같은 Node 24 로 빌드합니다. Node 20 은 이제
+          # GitHub Actions 에서 지원이 끝나 24 로 강제 실행되던 상태였습니다.
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
