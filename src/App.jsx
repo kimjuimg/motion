@@ -1,12 +1,44 @@
 import React, { useEffect, useState } from "react";
-import { isFirebaseConfigured } from "./firebase";
-import { removeMood, saveMood, subscribeMoods } from "./moodStore";
-import {
-  makeClassKey,
-  removeClass,
-  saveClass,
-  subscribeClasses,
-} from "./classStore";
+import { isFirebaseConfigured } from "./firebaseConfig";
+import { makeClassKey } from "./keys";
+
+/**
+ * Firebase SDK 는 첫 화면에 필요하지 않습니다.
+ *
+ * 학생은 이름을 적는 동안, 선생님은 교사 코드를 치는 동안 아무것도 읽고 쓰지
+ * 않습니다. 그래서 Firebase 를 쓰는 moodStore/classStore 는 정적으로 import
+ * 하지 않고 여기서 동적으로 불러옵니다. 그러면 SDK 가 별도 청크로 떨어져
+ * 나가서, 첫 화면은 그만큼 가볍게 뜹니다.
+ *
+ * 두 함수를 거쳐 가는 이유는 import() 가 같은 모듈에 대해 한 번만 실제로
+ * 받아오고 그다음부터는 이미 받은 것을 돌려주기 때문입니다 — 호출할 때마다
+ * 부담 없이 부르면 됩니다.
+ */
+const loadMoodStore = () => import("./moodStore");
+const loadClassStore = () => import("./classStore");
+
+/**
+ * 동적 import 로 가져온 구독을 useEffect 에서 쓰기 좋게 감쌉니다.
+ * 모듈이 도착하기 전에 화면을 떠나면 구독을 시작하자마자 바로 끊습니다.
+ * @param start 구독을 시작하고 해지 함수를 돌려주는 async 함수
+ * @returns useEffect 가 그대로 돌려주면 되는 정리 함수
+ */
+function subscribeLazily(start, onError) {
+  let stop = () => {};
+  let cancelled = false;
+
+  start()
+    .then((unsubscribe) => {
+      if (cancelled) unsubscribe();
+      else stop = unsubscribe;
+    })
+    .catch(onError);
+
+  return () => {
+    cancelled = true;
+    stop();
+  };
+}
 
 /* ---------- 데이터 ---------- */
 
@@ -197,10 +229,15 @@ function LoginScreen({ onEnter }) {
   const [classes, setClasses] = useState([]);
 
   // 등록된 반 목록을 받아와서, 학생이 친 코드가 어느 반인지 바로 보여줍니다.
-  useEffect(() => {
-    const stop = subscribeClasses(setClasses, (err) => console.error(err));
-    return stop;
-  }, []);
+  // 첫 화면이 뜬 뒤에 시작하므로, 이때 Firebase 청크도 함께 받아집니다.
+  useEffect(
+    () =>
+      subscribeLazily(async () => {
+        const { subscribeClasses } = await loadClassStore();
+        return subscribeClasses(setClasses, (err) => console.error(err));
+      }, (err) => console.error(err)),
+    []
+  );
 
   const typedCode = code.trim();
   const matchedClass =
@@ -475,6 +512,7 @@ function StudentScreen({ student, onGoHome }) {
     if (!selected) return;
     setStatus("saving");
     try {
+      const { saveMood } = await loadMoodStore();
       await saveMood({
         dateKey,
         code: student.code,
@@ -763,6 +801,7 @@ function ClassManager({ classes, onClose }) {
     }
     setBusy(true);
     try {
+      const { saveClass } = await loadClassStore();
       await saveClass({ name, code });
       setName("");
       setCode("");
@@ -778,6 +817,7 @@ function ClassManager({ classes, onClose }) {
   const handleRemove = async (cls) => {
     setBusy(true);
     try {
+      const { removeClass } = await loadClassStore();
       await removeClass(cls.id);
       setError("");
     } catch (err) {
@@ -1212,6 +1252,7 @@ function TeacherScreen({ onGoHome }) {
    */
   const handleDeleteEntry = async (entry) => {
     try {
+      const { removeMood } = await loadMoodStore();
       await removeMood(dateKey, entry.id);
       setDeleteError(null);
     } catch (err) {
@@ -1223,27 +1264,37 @@ function TeacherScreen({ onGoHome }) {
     }
   };
 
-  useEffect(() => {
-    const stop = subscribeMoods(
-      dateKey,
-      (list) => {
-        setEntries(list);
-        setError(null);
-        setLoading(false);
-      },
-      (err) => {
-        console.error(err);
-        setError({ lead: "불러오지 못했어요.", error: err });
-        setLoading(false);
-      }
-    );
-    return stop;
-  }, [dateKey]);
+  const handleLoadError = (err) => {
+    console.error(err);
+    setError({ lead: "불러오지 못했어요.", error: err });
+    setLoading(false);
+  };
 
-  useEffect(() => {
-    const stop = subscribeClasses(setClasses, (err) => console.error(err));
-    return stop;
-  }, []);
+  useEffect(
+    () =>
+      subscribeLazily(async () => {
+        const { subscribeMoods } = await loadMoodStore();
+        return subscribeMoods(
+          dateKey,
+          (list) => {
+            setEntries(list);
+            setError(null);
+            setLoading(false);
+          },
+          handleLoadError
+        );
+      }, handleLoadError),
+    [dateKey]
+  );
+
+  useEffect(
+    () =>
+      subscribeLazily(async () => {
+        const { subscribeClasses } = await loadClassStore();
+        return subscribeClasses(setClasses, (err) => console.error(err));
+      }, (err) => console.error(err)),
+    []
+  );
 
   // 선택한 학급이 삭제되면 전체 보기로 되돌립니다.
   useEffect(() => {

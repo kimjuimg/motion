@@ -1,43 +1,18 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
+import { firebaseConfig, isFirebaseConfigured } from "./firebaseConfig";
 
 /**
- * Firebase 웹 설정값은 비밀이 아닙니다.
- * 어떻게 배포하든 브라우저가 받아가는 JS 번들에 그대로 포함되는 공개 값이라,
- * Firebase 공식 문서도 소스에 두는 것을 허용합니다.
- * 실제 데이터 보호는 firestore.rules 의 보안 규칙이 담당합니다.
+ * Firebase SDK 초기화.
  *
- * 다른 Firebase 프로젝트를 쓰고 싶으면 .env 파일이나 배포 환경변수로 덮어쓰면 됩니다.
+ * 이 파일을 불러오는 순간 SDK 전체(700kB 남짓)가 따라옵니다. 그래서 화면에서는
+ * 이 파일을 직접 import 하지 않고, moodStore/classStore 를 필요한 순간에
+ * 동적 import 로 불러 씁니다. 설정값과 `isFirebaseConfigured` 는 SDK 없이도
+ * 읽을 수 있도록 firebaseConfig.js 에 따로 두었습니다.
  */
-const DEFAULT_CONFIG = {
-  apiKey: "AIzaSyCH9VxbeqvfRZVpOb3TV8fa2fhHYltaijE",
-  authDomain: "mood-checkin-b5d7c.firebaseapp.com",
-  projectId: "mood-checkin-b5d7c",
-  storageBucket: "mood-checkin-b5d7c.firebasestorage.app",
-  messagingSenderId: "143893323373",
-  appId: "1:143893323373:web:0c9edd5ed4c5775a96e964",
-};
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || DEFAULT_CONFIG.apiKey,
-  authDomain:
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_CONFIG.authDomain,
-  projectId:
-    import.meta.env.VITE_FIREBASE_PROJECT_ID || DEFAULT_CONFIG.projectId,
-  storageBucket:
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    DEFAULT_CONFIG.storageBucket,
-  messagingSenderId:
-    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
-    DEFAULT_CONFIG.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || DEFAULT_CONFIG.appId,
-};
-
-/** 환경변수가 아직 채워지지 않았으면 화면에 안내를 띄우기 위한 플래그. */
-export const isFirebaseConfigured = Boolean(
-  firebaseConfig.apiKey && firebaseConfig.projectId
-);
+export { isFirebaseConfigured };
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 

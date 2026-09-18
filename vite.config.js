@@ -7,4 +7,27 @@ export default defineConfig({
   // "./" 면 한 번의 빌드 결과가 두 곳 모두에서 동작합니다.
   base: "./",
   plugins: [react()],
+
+  build: {
+    rolldownOptions: {
+      output: {
+        // Firebase SDK 는 App.jsx 에서 동적 import 로 떼어 놓았지만, 한 덩어리로
+        // 두면 그것만 500kB 가 넘습니다. 어차피 함께 쓰이는 인증과 Firestore 를
+        // 두 파일로 나누면 브라우저가 둘을 동시에 받아 갑니다.
+        // re2js 는 Firestore 가 데리고 오는 정규식 라이브러리라 같이 묶습니다.
+        advancedChunks: {
+          groups: [
+            {
+              name: "firebase-auth",
+              test: /node_modules[\\/]@firebase[\\/]auth[\\/]/,
+            },
+            {
+              name: "firebase-firestore",
+              test: /node_modules[\\/](@firebase[\\/](firestore|webchannel-wrapper)|re2js)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
 });

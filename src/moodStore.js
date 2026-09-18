@@ -7,6 +7,9 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db, ensureSignedIn } from "./firebase";
+import { makeStudentKey } from "./keys";
+
+export { makeStudentKey };
 
 /**
  * 저장 구조
@@ -17,13 +20,6 @@ import { db, ensureSignedIn } from "./firebase";
 
 function entriesRef(dateKey) {
   return collection(db, "moods", dateKey, "entries");
-}
-
-/** Firestore 문서 ID로 쓸 수 없는 문자를 정리합니다. */
-export function makeStudentKey(code, name) {
-  const raw = `${code}__${name}`;
-  const cleaned = raw.replace(/[/\\.#$[\]]/g, "-").trim();
-  return cleaned.slice(0, 120) || "unknown";
 }
 
 export async function saveMood({ dateKey, code, name, emotionId, reason }) {

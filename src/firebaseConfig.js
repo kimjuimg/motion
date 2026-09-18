@@ -1,0 +1,43 @@
+/**
+ * Firebase 설정값.
+ *
+ * Firebase 웹 설정값은 비밀이 아닙니다.
+ * 어떻게 배포하든 브라우저가 받아가는 JS 번들에 그대로 포함되는 공개 값이라,
+ * Firebase 공식 문서도 소스에 두는 것을 허용합니다.
+ * 실제 데이터 보호는 firestore.rules 의 보안 규칙이 담당합니다.
+ *
+ * 다른 Firebase 프로젝트를 쓰고 싶으면 .env 파일이나 배포 환경변수로 덮어쓰면 됩니다.
+ *
+ * 설정값만 이 파일에 따로 둔 이유는 firebase.js 와 달리 SDK 를 불러오지 않기
+ * 때문입니다. 첫 화면은 "설정이 있는지" 만 알면 되는데, 그걸 물어보려고
+ * firebase.js 를 불러오면 SDK 전체가 첫 번들에 들어옵니다.
+ */
+
+const DEFAULT_CONFIG = {
+  apiKey: "AIzaSyCH9VxbeqvfRZVpOb3TV8fa2fhHYltaijE",
+  authDomain: "mood-checkin-b5d7c.firebaseapp.com",
+  projectId: "mood-checkin-b5d7c",
+  storageBucket: "mood-checkin-b5d7c.firebasestorage.app",
+  messagingSenderId: "143893323373",
+  appId: "1:143893323373:web:0c9edd5ed4c5775a96e964",
+};
+
+export const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || DEFAULT_CONFIG.apiKey,
+  authDomain:
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_CONFIG.authDomain,
+  projectId:
+    import.meta.env.VITE_FIREBASE_PROJECT_ID || DEFAULT_CONFIG.projectId,
+  storageBucket:
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    DEFAULT_CONFIG.storageBucket,
+  messagingSenderId:
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+    DEFAULT_CONFIG.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || DEFAULT_CONFIG.appId,
+};
+
+/** 환경변수가 아직 채워지지 않았으면 화면에 안내를 띄우기 위한 플래그. */
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey && firebaseConfig.projectId
+);
