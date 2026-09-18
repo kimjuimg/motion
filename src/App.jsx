@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { isFirebaseConfigured } from "./firebase";
-import { saveMood, subscribeMoods } from "./moodStore";
+import { removeMood, saveMood, subscribeMoods } from "./moodStore";
 import {
   makeClassKey,
   removeClass,
@@ -999,7 +999,79 @@ function EmotionSummary({ entries, compact = false }) {
 
 /* ---------- 교사 화면: 기록 표 ---------- */
 
-function EntryTable({ entries, showClassColumn, classLabelFor }) {
+/**
+ * 지우기 버튼. 실수로 남의 기록을 날리지 않도록 두 번 눌러야 지워집니다.
+ * 브라우저 confirm 창은 쓰지 않습니다 — 이 앱은 어느 화면에서도 모달을
+ * 띄우지 않고, 교실 화면에 갑자기 뜨는 시스템 창은 놀라기 쉽습니다.
+ */
+function DeleteEntryButton({ entry, onDelete }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const base = {
+    border: "1px solid #E4D5B6",
+    background: "transparent",
+    borderRadius: 999,
+    padding: "3px 10px",
+    fontSize: 12,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  if (!asking) {
+    return (
+      <button
+        onClick={() => setAsking(true)}
+        className="mc-focus"
+        title={`${entry.name} 기록 지우기`}
+        aria-label={`${entry.name} 기록 지우기`}
+        style={{ ...base, color: "#B9A886" }}
+      >
+        ✕
+      </button>
+    );
+  }
+
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+      <button
+        onClick={async () => {
+          setBusy(true);
+          // 지워지면 구독이 이 줄을 통째로 걷어가므로 busy 를 되돌릴 필요가
+          // 없지만, 실패했을 때는 다시 누를 수 있어야 합니다.
+          try {
+            await onDelete(entry);
+          } finally {
+            setBusy(false);
+            setAsking(false);
+          }
+        }}
+        disabled={busy}
+        className="mc-focus"
+        style={{
+          ...base,
+          border: "1px solid #D98B6A",
+          background: "#D98B6A",
+          color: "#FFF6E4",
+          fontWeight: 700,
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {busy ? "지우는 중" : "지울까요?"}
+      </button>
+      <button
+        onClick={() => setAsking(false)}
+        disabled={busy}
+        className="mc-focus"
+        style={{ ...base, color: "#9C8A6E" }}
+      >
+        취소
+      </button>
+    </span>
+  );
+}
+
+function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
   return (
     <div
       className="mc-scrollbar"
@@ -1015,7 +1087,7 @@ function EntryTable({ entries, showClassColumn, classLabelFor }) {
           width: "100%",
           borderCollapse: "collapse",
           fontSize: 14,
-          minWidth: showClassColumn ? 640 : 540,
+          minWidth: (showClassColumn ? 640 : 540) + (onDelete ? 80 : 0),
         }}
       >
         <thead>
@@ -1025,6 +1097,9 @@ function EntryTable({ entries, showClassColumn, classLabelFor }) {
             {showClassColumn && <th style={thStyle}>반</th>}
             <th style={thStyle}>이유</th>
             <th style={{ ...thStyle, textAlign: "right" }}>시간</th>
+            {onDelete && (
+              <th style={{ ...thStyle, textAlign: "right" }} aria-label="지우기" />
+            )}
           </tr>
         </thead>
         <tbody>
@@ -1097,6 +1172,17 @@ function EntryTable({ entries, showClassColumn, classLabelFor }) {
                 >
                   {formatTime(entry.updatedAt)}
                 </td>
+                {onDelete && (
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <DeleteEntryButton entry={entry} onDelete={onDelete} />
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -1117,7 +1203,25 @@ function TeacherScreen({ onGoHome }) {
   const [loading, setLoading] = useState(true);
   // 실패했을 때만 { lead, error } 를 담습니다. 성공하면 다시 null 로 비웁니다.
   const [error, setError] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
   const dateKey = getTodayKey();
+
+  /**
+   * 기록 한 건 지우기. 성공하면 구독이 알아서 목록에서 빼 주므로
+   * 여기서 따로 상태를 손대지 않습니다.
+   */
+  const handleDeleteEntry = async (entry) => {
+    try {
+      await removeMood(dateKey, entry.id);
+      setDeleteError(null);
+    } catch (err) {
+      console.error(err);
+      setDeleteError({
+        lead: `${entry.name} 기록을 지우지 못했어요.`,
+        error: err,
+      });
+    }
+  };
 
   useEffect(() => {
     const stop = subscribeMoods(
@@ -1326,6 +1430,15 @@ function TeacherScreen({ onGoHome }) {
           />
         )}
 
+        {deleteError && (
+          <ErrorNote
+            lead={deleteError.lead}
+            error={deleteError.error}
+            color="#F3C6B6"
+            style={{ marginTop: 0, marginBottom: 14 }}
+          />
+        )}
+
         {loading ? (
           <p style={{ color: "#E8D9BE" }}>불러오는 중...</p>
         ) : visibleEntries.length === 0 ? (
@@ -1385,6 +1498,7 @@ function TeacherScreen({ onGoHome }) {
                 entries={sortedEntries}
                 showClassColumn={false}
                 classLabelFor={classLabelFor}
+                onDelete={handleDeleteEntry}
               />
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
@@ -1431,6 +1545,7 @@ function TeacherScreen({ onGoHome }) {
                       entries={group.entries}
                       showClassColumn={false}
                       classLabelFor={classLabelFor}
+                      onDelete={handleDeleteEntry}
                     />
                   </section>
                 ))}

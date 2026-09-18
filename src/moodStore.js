@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
@@ -35,6 +36,16 @@ export async function saveMood({ dateKey, code, name, emotionId, reason }) {
     reason,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * 기록 한 건을 지웁니다. 선생님 게시판에서만 부릅니다.
+ * 보안 규칙은 익명 로그인한 사람이면 누구나 지울 수 있게 열려 있으므로
+ * (firestore.rules 주석 참고) 교사 화면 밖에서는 쓰지 마세요.
+ */
+export async function removeMood(dateKey, entryId) {
+  await ensureSignedIn();
+  await deleteDoc(doc(entriesRef(dateKey), entryId));
 }
 
 /**

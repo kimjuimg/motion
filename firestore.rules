@@ -23,9 +23,17 @@ service cloud.firestore {
         && request.resource.data.reason is string
         && request.resource.data.reason.size() <= 200;
 
-      // 학생이 남의 기록을 지울 수 없게 막습니다.
-      // 정리는 Firebase 콘솔에서 선생님이 직접 하세요.
-      allow delete: if false;
+      // 선생님이 화면에서 기록을 지울 수 있도록 삭제를 허용합니다.
+      //
+      // ⚠️ 이 규칙은 "선생님만" 을 구분하지 못합니다. 모두가 익명 로그인이라
+      // 서버는 교사와 학생을 알아볼 방법이 없고, 교사 코드는 브라우저 안에만
+      // 있는 칸막이일 뿐입니다. 즉 주소를 알고 개발자 도구를 열 줄 아는
+      // 학생이라면 남의 기록도 지울 수 있습니다.
+      //
+      // 진짜로 막아야 한다면 Authentication 에 교사 이메일 계정을 만들고
+      //   allow delete: if request.auth.token.email in ['teacher@school.kr'];
+      // 처럼 계정을 확인하도록 바꿔야 합니다.
+      allow delete: if request.auth != null;
     }
 
     // classes/{학급키} — 선생님이 만드는 학급 목록
