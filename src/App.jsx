@@ -42,16 +42,46 @@ function subscribeLazily(start, onError) {
 
 /* ---------- 데이터 ---------- */
 
+/**
+ * 고를 수 있는 감정.
+ *
+ * 색깔이 같은 것끼리 한 갈래입니다 — 노랑은 기쁨, 초록은 평온, 보라는 슬픔,
+ * 주황은 화남과 두려움, 베이지는 지침. 여기 적은 순서가 곧 학생 화면에
+ * 놓이는 순서이자 선생님 화면 "감정순" 정렬의 순서이므로, 새 감정은 같은
+ * 갈래 옆에 끼워 넣어야 비슷한 마음끼리 붙어서 보입니다.
+ *
+ * id 는 Firestore 에 그대로 저장되는 값이라 한 번 정하면 바꾸지 마세요.
+ * 바꾸면 그 전에 쌓인 기록이 "알 수 없음" 으로 보입니다.
+ */
 const EMOTIONS = [
   { id: "excited", emoji: "😆", label: "신남", color: "#F3CD5C" },
   { id: "happy", emoji: "😊", label: "행복", color: "#F3CD5C" },
+  { id: "fun", emoji: "🤣", label: "재미있는", color: "#F3CD5C" },
+  { id: "blessed", emoji: "🥰", label: "축복받은", color: "#F3CD5C" },
+  { id: "touched", emoji: "🥲", label: "감동적인", color: "#F3CD5C" },
+
   { id: "calm", emoji: "😌", label: "편안", color: "#9DBF8E" },
   { id: "meh", emoji: "😐", label: "무덤덤", color: "#9DBF8E" },
+
   { id: "sad", emoji: "😢", label: "슬픔", color: "#ACA0D8" },
   { id: "down", emoji: "😔", label: "속상", color: "#ACA0D8" },
+  { id: "depressed", emoji: "😞", label: "우울한", color: "#ACA0D8" },
+  { id: "disappointed", emoji: "😕", label: "실망스러운", color: "#ACA0D8" },
+  { id: "pessimistic", emoji: "😒", label: "비관적인", color: "#ACA0D8" },
+  { id: "lonely", emoji: "🧍", label: "고독한", color: "#ACA0D8" },
+  { id: "leftout", emoji: "🙍", label: "소외된", color: "#ACA0D8" },
+
   { id: "angry", emoji: "😠", label: "화남", color: "#E28B6D" },
+  { id: "enraged", emoji: "😡", label: "격분한", color: "#E28B6D" },
+  { id: "furious", emoji: "🤬", label: "화가 치밀어 오른", color: "#E28B6D" },
+  { id: "stressed", emoji: "😫", label: "스트레스 받는", color: "#E28B6D" },
   { id: "anxious", emoji: "😰", label: "불안", color: "#E28B6D" },
+  { id: "scared", emoji: "😨", label: "겁먹은", color: "#E28B6D" },
+  { id: "troubled", emoji: "🤯", label: "골치아픈", color: "#E28B6D" },
+
   { id: "tired", emoji: "😴", label: "피곤", color: "#D6C6A8" },
+  { id: "drained", emoji: "😵", label: "진이 빠진", color: "#D6C6A8" },
+  { id: "listless", emoji: "😑", label: "의욕없는", color: "#D6C6A8" },
 ];
 
 const EMOTION_BY_ID = Object.fromEntries(EMOTIONS.map((e) => [e.id, e]));
@@ -611,11 +641,16 @@ function StudentScreen({ student, onGoHome }) {
           {student.name}님, 오늘 기분이 어때요?
         </h1>
 
+        {/*
+          감정이 24개라 3칸 고정이면 8줄이 되어 화면 밖으로 밀려납니다.
+          폭에 맞춰 칸 수가 늘도록 해서, 좁은 휴대폰에서는 3칸, 넓은 화면에서는
+          4~5칸으로 접힙니다.
+        */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 10,
+            gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))",
+            gap: 8,
           }}
         >
           {EMOTIONS.map((emo) => {
@@ -630,18 +665,28 @@ function StudentScreen({ student, onGoHome }) {
                   border: isSel ? "2px solid #7A4F2B" : "1px solid #EADFC5",
                   background: isSel ? emo.color : "#FFFCF4",
                   borderRadius: 14,
-                  padding: "14px 6px",
+                  padding: "12px 5px",
                   cursor: "pointer",
                   boxShadow: isSel ? "0 6px 14px rgba(122,79,43,0.25)" : "none",
+                  // 이름이 두 줄인 감정("화가 치밀어 오른")과 한 줄인 감정이
+                  // 섞여 있어도 칸 높이가 들쭉날쭉하지 않게 맞춥니다.
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  minHeight: 88,
                 }}
               >
-                <div style={{ fontSize: 30 }}>{emo.emoji}</div>
+                <div style={{ fontSize: 27, lineHeight: 1.1 }}>{emo.emoji}</div>
                 <div
                   style={{
-                    fontSize: 13,
-                    marginTop: 4,
+                    fontSize: 12,
+                    marginTop: 5,
                     color: "#5B4A30",
                     fontWeight: isSel ? 700 : 400,
+                    lineHeight: 1.3,
+                    // 한국어는 낱말 단위로 줄을 바꿔야 읽기 쉽습니다.
+                    wordBreak: "keep-all",
                   }}
                 >
                   {emo.label}
@@ -994,11 +1039,18 @@ function ClassManager({ classes, onClose }) {
  * 감정별 인원수 칩.
  * compact 를 켜면 인원이 0인 감정은 빼고 보여줍니다 (반별 요약용).
  */
+/**
+ * 감정별 인원 요약.
+ *
+ * 아무도 고르지 않은 감정은 빼고 보여줍니다. 감정이 24개까지 늘어나면서
+ * 0 인 칸을 다 늘어놓으면 오늘 무엇이 많았는지가 그 사이에 묻힙니다.
+ * (하나도 없는 날에는 요약 줄 대신 "아직 전달된 마음이 없어요" 가 뜹니다.)
+ */
 function EmotionSummary({ entries, compact = false }) {
   const counts = EMOTIONS.map((emo) => ({
     ...emo,
     count: entries.filter((e) => e.emotionId === emo.id).length,
-  })).filter((c) => !compact || c.count > 0);
+  })).filter((c) => c.count > 0);
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? 6 : 8 }}>
