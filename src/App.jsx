@@ -981,7 +981,7 @@ function ClassManager({ classes, onClose }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={30}
-          placeholder="학급 이름 (예: 3학년 2반)"
+          placeholder="학급 이름 (예: ○학년 ○반)"
           className="mc-focus"
           style={{ ...panelInput, flex: "2 1 200px", width: "auto" }}
         />
