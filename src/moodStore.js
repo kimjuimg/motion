@@ -7,13 +7,13 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db, ensureSignedIn } from "./firebase";
-import { makeStudentKey } from "./keys";
+import { makeEntryKey } from "./keys";
 
-export { makeStudentKey };
+export { makeEntryKey };
 
 /**
  * 저장 구조
- *   moods/{YYYY-MM-DD}/entries/{학생키}
+ *   moods/{YYYY-MM-DD}/entries/{반키__세션id}
  * 학생마다 문서가 따로 생기므로 여러 명이 동시에 제출해도 서로 덮어쓰지 않습니다.
  * 같은 학생이 다시 제출하면 자기 문서만 갱신됩니다.
  */
@@ -22,11 +22,11 @@ function entriesRef(dateKey) {
   return collection(db, "moods", dateKey, "entries");
 }
 
-export async function saveMood({ dateKey, code, name, emotionId, reason }) {
+export async function saveMood({ dateKey, code, sessionId, emotionId, reason }) {
   await ensureSignedIn();
-  const key = makeStudentKey(code, name);
+  // 이름은 받지 않습니다. 반 + 세션 id 로 한 번 들어온 학생을 구분합니다.
+  const key = makeEntryKey(code, sessionId);
   await setDoc(doc(entriesRef(dateKey), key), {
-    name,
     code,
     emotionId,
     reason,

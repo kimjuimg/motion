@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { isFirebaseConfigured } from "./firebaseConfig";
-import { makeClassKey } from "./keys";
+import { makeClassKey, newSessionId } from "./keys";
 import { QUADRANTS, EMOTIONS, findEmotion, emotionOrder } from "./emotions";
 
 /**
  * Firebase SDK 는 첫 화면에 필요하지 않습니다.
  *
- * 학생은 이름을 적는 동안, 선생님은 교사 코드를 치는 동안 아무것도 읽고 쓰지
+ * 학생은 반을 고르는 동안, 선생님은 교사 코드를 치는 동안 아무것도 읽고 쓰지
  * 않습니다. 그래서 Firebase 를 쓰는 moodStore/classStore 는 정적으로 import
  * 하지 않고 여기서 동적으로 불러옵니다. 그러면 SDK 가 별도 청크로 떨어져
  * 나가서, 첫 화면은 그만큼 가볍게 뜹니다.
@@ -104,9 +104,25 @@ function ErrorNote({ lead, error, color, style }) {
  */
 const TEACHER_CODE = import.meta.env.VITE_TEACHER_CODE || "motion2026";
 
+/**
+ * 기본 학급 네 개. 선생님이 ⚙️ 학급 관리에서 학급을 하나도 등록하지 않았을 때
+ * 학생 화면의 반 버튼과 선생님 화면의 반 묶음에 이 네 반을 씁니다.
+ * 학급을 하나라도 등록하면 그때부터는 등록한 학급만 씁니다.
+ */
+const DEFAULT_CLASSES = ["1반", "2반", "3반", "4반"].map((name) => ({
+  id: makeClassKey(name),
+  name,
+  code: name,
+  isDefault: true,
+}));
+
+/** 화면에서 쓸 학급 목록: 등록된 학급이 있으면 그것, 없으면 기본 네 반. */
+function classListFrom(registered) {
+  return registered.length > 0 ? registered : DEFAULT_CLASSES;
+}
+
 const SORT_OPTIONS = [
   { id: "recent", label: "최신순" },
-  { id: "name", label: "이름순" },
   { id: "emotion", label: "감정순" },
 ];
 
@@ -202,15 +218,14 @@ function SetupNotice() {
 /* ---------- 화면: 로그인 ---------- */
 
 function LoginScreen({ onEnter }) {
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
+  const [classId, setClassId] = useState(null);
   const [error, setError] = useState("");
   const [goTeacher, setGoTeacher] = useState(false);
   const [teacherCodeInput, setTeacherCodeInput] = useState("");
   const [teacherError, setTeacherError] = useState("");
   const [classes, setClasses] = useState([]);
 
-  // 등록된 반 목록을 받아와서, 학생이 친 코드가 어느 반인지 바로 보여줍니다.
+  // 등록된 반 목록을 받아와서 반 버튼으로 보여 줍니다 (없으면 기본 네 반).
   // 첫 화면이 뜬 뒤에 시작하므로, 이때 Firebase 청크도 함께 받아집니다.
   useEffect(
     () =>
@@ -221,22 +236,22 @@ function LoginScreen({ onEnter }) {
     []
   );
 
-  const typedCode = code.trim();
-  const matchedClass =
-    typedCode && classes.find((c) => c.id === makeClassKey(typedCode));
+  const classList = classListFrom(classes);
+  const chosenClass = classList.find((c) => c.id === classId) || null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim() || !typedCode) {
-      setError("이름과 반 코드를 모두 입력해 주세요.");
+    if (!chosenClass) {
+      setError("우리 반을 골라 주세요.");
       return;
     }
     setError("");
+    // 이름은 받지 않습니다. 들어올 때마다 새 세션 id 를 만들어 기록을 나눕니다.
     onEnter({
       role: "student",
-      name: name.trim(),
-      code: typedCode,
-      className: matchedClass ? matchedClass.name : "",
+      code: chosenClass.code,
+      className: chosenClass.name,
+      sessionId: newSessionId(),
     });
   };
 
@@ -283,74 +298,56 @@ function LoginScreen({ onEnter }) {
                 오늘의 기분 체크인
               </h1>
               <p style={{ color: "#9C8A6E", fontSize: 14, marginTop: 6 }}>
-                이름과 우리 반 코드를 입력하고 들어와요
+                우리 반을 고르고 들어와요 (이름은 쓰지 않아요)
               </p>
             </div>
 
             <form onSubmit={handleSubmit}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  color: "#7A6A4E",
-                  marginBottom: 6,
-                }}
-              >
-                이름
-              </label>
-              <input
-                className="mc-focus"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={30}
-                placeholder="예: 김린하"
-                style={inputStyle}
-              />
-
-              <label
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  color: "#7A6A4E",
-                  margin: "16px 0 6px",
-                }}
+              <p
+                id="mc-class-label"
+                style={{ fontSize: 13, color: "#7A6A4E", margin: "0 0 8px" }}
               >
                 우리 반
-              </label>
-              <input
-                className="mc-focus"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                maxLength={40}
-                placeholder="선생님이 알려준 반 코드 (예: 3-2)"
-                style={inputStyle}
-              />
-
-              {matchedClass ? (
-                <p
-                  style={{
-                    color: "#5E7A4E",
-                    fontSize: 13,
-                    margin: "8px 0 0",
-                  }}
-                >
-                  ✓ 우리 반: <strong>{matchedClass.name}</strong>
-                </p>
-              ) : (
-                typedCode &&
-                classes.length > 0 && (
-                  <p
-                    style={{
-                      color: "#A8845C",
-                      fontSize: 13,
-                      margin: "8px 0 0",
-                    }}
-                  >
-                    등록된 반 코드가 아니에요. 선생님이 알려준 코드가 맞는지
-                    확인해 주세요.
-                  </p>
-                )
-              )}
+              </p>
+              <div
+                role="radiogroup"
+                aria-labelledby="mc-class-label"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 8,
+                }}
+              >
+                {classList.map((cls) => {
+                  const on = cls.id === classId;
+                  return (
+                    <button
+                      key={cls.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => {
+                        setClassId(cls.id);
+                        setError("");
+                      }}
+                      className="mc-focus"
+                      style={{
+                        padding: "16px 8px",
+                        borderRadius: 14,
+                        border: on ? "2px solid #C0724A" : "1px solid #E2D4B4",
+                        background: on ? "#F8E3D3" : "#FFFCF4",
+                        color: on ? "#7A4F2B" : "#5B4A30",
+                        fontSize: 17,
+                        fontWeight: on ? 700 : 400,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {on && "✓ "}
+                      {cls.name}
+                    </button>
+                  );
+                })}
+              </div>
 
               {error && (
                 <p style={{ color: "#C0553A", fontSize: 13, marginTop: 10 }}>
@@ -377,6 +374,25 @@ function LoginScreen({ onEnter }) {
                 들어가기
               </button>
             </form>
+
+            <button
+              onClick={() => onEnter({ role: "data" })}
+              className="mc-focus"
+              style={{
+                width: "100%",
+                marginTop: 14,
+                padding: "11px 0",
+                borderRadius: 12,
+                border: "1px solid #C7A876",
+                background: "#FBF3E2",
+                color: "#7A4F2B",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              📋 모은 문장 보기 (엔트리에 붙여넣기)
+            </button>
 
             <button
               onClick={() => setGoTeacher(true)}
@@ -480,6 +496,21 @@ const inputStyle = {
   fontFamily: "'Gowun Dodum', sans-serif",
   background: "#FFFCF4",
 };
+
+/* ---------- 학생 화면: 이유 다듬기 ---------- */
+
+/** 쉼표(반각 , · 전각 ， · 、)를 띄어쓰기로 바꿉니다. 학생이 쓰는 동안 바로 적용합니다. */
+function stripCommas(text) {
+  return String(text ?? "").replace(/[,，、]/g, " ");
+}
+
+/**
+ * 저장하거나 보여 줄 이유 문장. 쉼표를 없애고 겹친 띄어쓰기를 하나로 줄입니다.
+ * 이미 쉼표가 들어간 채 저장된 지난 기록도 화면과 엑셀에서는 이렇게 다듬어 보여 줍니다.
+ */
+function cleanReason(text) {
+  return stripCommas(text).replace(/[ \t]{2,}/g, " ").trim();
+}
 
 /* ---------- 학생 화면: 이유 검사 ---------- */
 
@@ -734,9 +765,9 @@ function StudentScreen({ student, onGoHome }) {
       await saveMood({
         dateKey,
         code: student.code,
-        name: student.name,
+        sessionId: student.sessionId,
         emotionId: selected.id,
-        reason: reason.trim(),
+        reason: cleanReason(reason),
       });
       setStatus("done");
     } catch (e) {
@@ -773,7 +804,7 @@ function StudentScreen({ student, onGoHome }) {
             {selected.emoji}
           </div>
           <p style={{ color: "#9C8A6E", fontSize: 14, margin: "0 0 4px" }}>
-            {student.name}님의 <strong>{selected.label}</strong> 마음을 잘 전달했어요
+            <strong>{selected.label}</strong> 마음을 잘 전달했어요
           </p>
           <h2
             className="mc-hand"
@@ -843,7 +874,7 @@ function StudentScreen({ student, onGoHome }) {
           className="mc-hand"
           style={{ fontSize: 26, color: "#7A4F2B", margin: "0 0 20px" }}
         >
-          {student.name}님, 오늘 기분이 어때요?
+          오늘 기분이 어때요?
         </h1>
 
         <MoodMeterPicker
@@ -875,7 +906,7 @@ function StudentScreen({ student, onGoHome }) {
               id="mc-reason"
               value={reason}
               onChange={(e) => {
-                setReason(e.target.value);
+                setReason(stripCommas(e.target.value));
                 setReasonTouched(true);
               }}
               maxLength={200}
@@ -1318,6 +1349,11 @@ function EmotionSummary({ entries, compact = false }) {
  * 브라우저 confirm 창은 쓰지 않습니다 — 이 앱은 어느 화면에서도 모달을
  * 띄우지 않고, 교실 화면에 갑자기 뜨는 시스템 창은 놀라기 쉽습니다.
  */
+/** 이름이 없으므로 기록 한 건을 "오후 2:31 · 화난 기록" 처럼 부릅니다. */
+function entryLabel(entry) {
+  return `${formatTime(entry.updatedAt)} · ${findEmotion(entry.emotionId).label} 기록`;
+}
+
 function DeleteEntryButton({ entry, onDelete }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1337,8 +1373,8 @@ function DeleteEntryButton({ entry, onDelete }) {
       <button
         onClick={() => setAsking(true)}
         className="mc-focus"
-        title={`${entry.name} 기록 지우기`}
-        aria-label={`${entry.name} 기록 지우기`}
+        title={`${entryLabel(entry)} 지우기`}
+        aria-label={`${entryLabel(entry)} 지우기`}
         style={{ ...base, color: "#B9A886" }}
       >
         ✕
@@ -1402,13 +1438,12 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete, style }
           width: "100%",
           borderCollapse: "collapse",
           fontSize: 14,
-          minWidth: (showClassColumn ? 640 : 540) + (onDelete ? 80 : 0),
+          minWidth: (showClassColumn ? 560 : 460) + (onDelete ? 80 : 0),
         }}
       >
         <thead>
           <tr style={{ background: "#F1E6CE" }}>
             <th style={thStyle}>감정</th>
-            <th style={thStyle}>이름</th>
             {showClassColumn && <th style={thStyle}>반</th>}
             <th style={thStyle}>이유</th>
             <th style={{ ...thStyle, textAlign: "right" }}>시간</th>
@@ -1446,16 +1481,6 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete, style }
                     {emotion.label}
                   </span>
                 </td>
-                <td
-                  style={{
-                    ...tdStyle,
-                    fontWeight: 700,
-                    color: "#5B4A30",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {entry.name}
-                </td>
                 {showClassColumn && (
                   <td
                     style={{
@@ -1475,7 +1500,9 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete, style }
                     minWidth: 200,
                   }}
                 >
-                  {entry.reason || <span style={{ color: "#C4B593" }}>—</span>}
+                  {cleanReason(entry.reason) || (
+                    <span style={{ color: "#C4B593" }}>—</span>
+                  )}
                 </td>
                 <td
                   style={{
@@ -1536,91 +1563,126 @@ function groupByColor(entries) {
   return other.entries.length ? [...groups, other] : groups;
 }
 
-/** 네 색이 몇 명씩인지 한 줄 막대로 보여 줍니다. */
-function ColorBar({ groups, total }) {
+/**
+ * 한 색깔의 문장들을 쉼표로 이어 붙입니다.
+ * 엔트리 "모델 학습"의 텍스트 데이터는 쉼표로 한 개씩 나뉘므로,
+ * 문장 안의 쉼표는 이미 cleanReason 에서 지워져 있어야 개수가 맞습니다.
+ */
+function joinSentences(entries) {
+  return entries
+    .map((e) => cleanReason(e.reason))
+    .filter(Boolean)
+    .join(",");
+}
+
+/** 클립보드에 복사. 학교 PC 처럼 clipboard API 가 막힌 곳을 위해 옛 방식도 씁니다. */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+}
+
+/**
+ * 네 색깔의 문장 개수를 큰 숫자 타일로 보여 줍니다.
+ * 엔트리에 붙여넣을 개수와 같도록, 이유가 비어 있는 (예전) 기록은 세지 않습니다.
+ */
+function ColorCounts({ groups }) {
+  const countOf = (g) => g.entries.filter((e) => cleanReason(e.reason)).length;
+  const total = groups.reduce((sum, g) => sum + countOf(g), 0);
   return (
     <div
-      role="img"
-      aria-label={groups.map((g) => `${g.label} ${g.entries.length}명`).join(", ")}
       style={{
-        display: "flex",
-        height: 30,
-        borderRadius: 10,
-        overflow: "hidden",
-        boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+        gap: 10,
         marginBottom: 22,
-        background: "rgba(255,255,255,0.08)",
       }}
     >
-      {groups
-        .filter((g) => g.entries.length > 0)
-        .map((g) => {
-          const pct = Math.round((g.entries.length / total) * 100);
-          return (
-            <div
-              key={g.id}
-              title={`${g.label} · ${g.title}: ${g.entries.length}명 (${pct}%)`}
-              style={{
-                flex: g.entries.length,
-                background: g.color,
-                color: g.textColor,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                minWidth: 0,
-              }}
-            >
-              {pct >= 8 && `${g.label} ${pct}%`}
-            </div>
-          );
-        })}
+      {groups.map((g) => {
+        const n = countOf(g);
+        return (
+          <a
+            key={g.id}
+            href={`#mc-color-${g.id}`}
+            className="mc-focus"
+            style={{
+              background: g.color,
+              color: g.textColor,
+              borderRadius: 14,
+              padding: "12px 14px",
+              textDecoration: "none",
+              boxShadow: "0 6px 16px rgba(0,0,0,0.22)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 28 }}>{g.emoji}</span>
+            <span>
+              <span style={{ display: "block", fontSize: 13, fontWeight: 700 }}>
+                {g.label}
+              </span>
+              <span style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>
+                {n}개
+              </span>
+              {total > 0 && (
+                <span style={{ fontSize: 12, opacity: 0.85, marginLeft: 4 }}>
+                  {Math.round((n / total) * 100)}%
+                </span>
+              )}
+            </span>
+          </a>
+        );
+      })}
     </div>
   );
 }
 
 /**
- * 지금 보이는 기록을 색깔별로 정리해서 CSV(엑셀에서 열림) 파일로 내려받습니다.
- * 맨 앞의 BOM(﻿) 이 없으면 엑셀이 한글을 깨뜨려서 엽니다.
+ * 한 색깔의 문장 모음.
+ * 위에는 쉼표로 이어 붙인 전체 문장(엔트리에 붙여넣을 그대로)과 복사 버튼,
+ * 아래에는 문장 하나하나를 감정·반·시간과 함께 보여 줍니다.
+ * onDelete 가 있으면(선생님 화면) 문장마다 지우기 버튼이 붙습니다.
  */
-function downloadColorCsv({ groups, classLabelFor, fileLabel }) {
-  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const header = ["색깔", "마음", "감정", "영어", "이름", "반", "이유", "시간"];
-  const rows = [header];
-  for (const g of groups) {
-    for (const entry of g.entries) {
-      const emo = findEmotion(entry.emotionId);
-      rows.push([
-        g.label,
-        g.title,
-        emo.label,
-        emo.en,
-        entry.name,
-        classLabelFor(entry),
-        entry.reason,
-        formatTime(entry.updatedAt),
-      ]);
-    }
-  }
-  const csv = "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `마음기록_${fileLabel}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+function ColorSection({ group, classLabelFor, showClass, onDelete }) {
+  const [copied, setCopied] = useState(null); // null | "ok" | "fail"
+  const joined = joinSentences(group.entries);
+  const count = joined ? joined.split(",").length : 0;
 
-/** 한 색깔의 묶음: 색 띠 머리 + 그 색 학생들의 표. */
-function ColorSection({ group, total, showClassColumn, classLabelFor, onDelete }) {
-  const count = group.entries.length;
+  const handleCopy = async () => {
+    const ok = await copyText(joined);
+    setCopied(ok ? "ok" : "fail");
+    setTimeout(() => setCopied(null), 2000);
+  };
+
   return (
-    <section>
+    <section
+      id={`mc-color-${group.id}`}
+      style={{
+        background: "#FFFDF7",
+        borderRadius: 14,
+        overflow: "hidden",
+        boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
+        scrollMarginTop: 16,
+      }}
+    >
       <div
         style={{
           display: "flex",
@@ -1629,7 +1691,6 @@ function ColorSection({ group, total, showClassColumn, classLabelFor, onDelete }
           gap: 10,
           background: group.color,
           color: group.textColor,
-          borderRadius: count ? "14px 14px 0 0" : 14,
           padding: "10px 16px",
         }}
       >
@@ -1637,26 +1698,307 @@ function ColorSection({ group, total, showClassColumn, classLabelFor, onDelete }
         <h2 style={{ fontSize: 18, margin: 0 }}>
           {group.label} · {group.title}
         </h2>
-        {group.hint && (
-          <span style={{ fontSize: 12, opacity: 0.85 }}>{group.hint}</span>
-        )}
-        <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 15 }}>
-          {count}명{total > 0 && ` (${Math.round((count / total) * 100)}%)`}
-        </span>
-      </div>
-      {count > 0 ? (
-        <EntryTable
-          entries={group.entries}
-          showClassColumn={showClassColumn}
-          classLabelFor={classLabelFor}
-          onDelete={onDelete}
+        <span style={{ fontWeight: 800, fontSize: 18 }}>{count}개</span>
+        <button
+          onClick={handleCopy}
+          disabled={!joined}
+          className="mc-focus"
           style={{
-            borderRadius: "0 0 14px 14px",
-            borderLeft: `6px solid ${group.color}`,
+            marginLeft: "auto",
+            border: "none",
+            borderRadius: 999,
+            padding: "7px 14px",
+            fontSize: 13,
+            fontWeight: 700,
+            background: "#FFFDF7",
+            color: "#5C4126",
+            cursor: joined ? "pointer" : "not-allowed",
+            opacity: joined ? 1 : 0.6,
           }}
-        />
-      ) : null}
+        >
+          {copied === "ok"
+            ? `✓ ${count}개 복사했어요`
+            : copied === "fail"
+              ? "복사가 막혔어요 — 아래 칸을 직접 복사해요"
+              : "📋 쉼표로 이어서 복사"}
+        </button>
+      </div>
+
+      {joined ? (
+        <>
+          {/* 복사될 내용을 그대로 보여 줍니다. 클릭하면 전체가 선택돼서 직접 복사해도 됩니다. */}
+          <textarea
+            readOnly
+            value={joined}
+            onFocus={(e) => e.target.select()}
+            aria-label={`${group.label} 문장 ${count}개, 쉼표로 이어 붙인 것`}
+            className="mc-focus"
+            style={{
+              display: "block",
+              width: "100%",
+              boxSizing: "border-box",
+              minHeight: 64,
+              border: "none",
+              borderBottom: "1px solid #EFE3C8",
+              background: "#FBF6E9",
+              color: "#5B4A30",
+              padding: "10px 16px",
+              fontSize: 13,
+              lineHeight: 1.6,
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+          />
+          <ul style={{ listStyle: "none", margin: 0, padding: "6px 0" }}>
+            {group.entries.map((entry) => {
+              const emo = findEmotion(entry.emotionId);
+              const text = cleanReason(entry.reason);
+              return (
+                <li
+                  key={entry.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 10,
+                    padding: "8px 16px",
+                    borderTop: "1px solid #F3EAD6",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      background: emo.color,
+                      color: emo.textColor,
+                      borderRadius: 999,
+                      padding: "3px 10px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {emo.emoji} {emo.label}
+                  </span>
+                  <span style={{ flex: "1 1 200px", color: "#4A3418", fontSize: 14 }}>
+                    {text || <span style={{ color: "#C4B593" }}>(이유 없음)</span>}
+                  </span>
+                  <span style={{ color: "#9C8A6E", fontSize: 12, whiteSpace: "nowrap" }}>
+                    {showClass && `${classLabelFor(entry)} · `}
+                    {formatTime(entry.updatedAt)}
+                  </span>
+                  {onDelete && <DeleteEntryButton entry={entry} onDelete={onDelete} />}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : (
+        <p style={{ margin: 0, padding: "14px 16px", color: "#9C8A6E", fontSize: 13 }}>
+          아직 이 색깔의 문장이 없어요.
+        </p>
+      )}
     </section>
+  );
+}
+
+/** 색깔별 문장 모음 전체: 개수 타일 + 네 색 묶음. 학생용·선생님용이 함께 씁니다. */
+function SentenceBoard({ entries, classLabelFor, showClass, onDelete }) {
+  const groups = groupByColor(entries);
+  return (
+    <>
+      <ColorCounts groups={groups} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+        {groups.map((g) => (
+          <ColorSection
+            key={g.id}
+            group={g}
+            classLabelFor={classLabelFor}
+            showClass={showClass}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * 선생님 확인용: 오늘 기록 전체(모든 반)를 CSV(엑셀에서 열림)로 내려받습니다.
+ * 반 → 색깔 → 시간 순서로 정리합니다.
+ * 맨 앞의 BOM(﻿) 이 없으면 엑셀이 한글을 깨뜨려서 엽니다.
+ */
+function downloadAllCsv({ entries, classLabelFor, classOrder, dateKey }) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const colorRank = (e) => {
+    const i = COLOR_VIEW_ORDER.indexOf(findEmotion(e.emotionId).quadrant);
+    return i < 0 ? 99 : i;
+  };
+  const sorted = [...entries].sort(
+    (a, b) =>
+      classOrder(a) - classOrder(b) ||
+      String(classLabelFor(a)).localeCompare(String(classLabelFor(b)), "ko") ||
+      colorRank(a) - colorRank(b) ||
+      (a.updatedAt?.toMillis?.() ?? 0) - (b.updatedAt?.toMillis?.() ?? 0)
+  );
+  const rows = [["날짜", "반", "색깔", "마음", "감정", "영어", "이유", "시간"]];
+  for (const entry of sorted) {
+    const emo = findEmotion(entry.emotionId);
+    const q = QUADRANTS.find((x) => x.id === emo.quadrant);
+    rows.push([
+      dateKey,
+      classLabelFor(entry),
+      q ? q.label : "기타",
+      q ? q.title : "",
+      emo.label,
+      emo.en,
+      cleanReason(entry.reason),
+      formatTime(entry.updatedAt),
+    ]);
+  }
+  const csv = "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `마음기록_${dateKey}_전체.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- 화면: 모은 문장 보기 (학생도 열 수 있음, 읽기 전용) ---------- */
+
+/**
+ * 엔트리 모델 학습에 붙여넣을 문장을 학생이 직접 복사해 가는 화면.
+ * 이름을 받지 않으므로 누가 쓴 문장인지는 드러나지 않습니다. 지우기는 없습니다.
+ */
+function DataScreen({ onGoHome }) {
+  const [entries, setEntries] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [classId, setClassId] = useState(ALL_CLASSES);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const dateKey = getTodayKey();
+
+  useEffect(
+    () =>
+      subscribeLazily(async () => {
+        const { subscribeMoods } = await loadMoodStore();
+        return subscribeMoods(
+          dateKey,
+          (list) => {
+            setEntries(list);
+            setError(null);
+            setLoading(false);
+          },
+          (err) => {
+            setError(err);
+            setLoading(false);
+          }
+        );
+      }, (err) => {
+        setError(err);
+        setLoading(false);
+      }),
+    [dateKey]
+  );
+
+  useEffect(
+    () =>
+      subscribeLazily(async () => {
+        const { subscribeClasses } = await loadClassStore();
+        return subscribeClasses(setClasses, (err) => console.error(err));
+      }, (err) => console.error(err)),
+    []
+  );
+
+  const classList = classListFrom(classes);
+  const chosen = classList.find((c) => c.id === classId) || null;
+  const visible = chosen
+    ? entries.filter((e) => makeClassKey(e.code) === chosen.id)
+    : entries;
+  const classLabelFor = (entry) =>
+    classList.find((c) => c.id === makeClassKey(entry.code))?.name || entry.code;
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(ellipse at top, #8C6A44 0%, #6E4F30 60%, #5C4126 100%)",
+        padding: "28px 16px 60px",
+      }}
+    >
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h1 className="mc-hand" style={{ color: "#FFF6E4", fontSize: 28, margin: 0 }}>
+              모은 문장 보기
+            </h1>
+            <p style={{ color: "#E8D9BE", fontSize: 13, marginTop: 4 }}>
+              {getTodayLabel()} · 색깔마다 <strong>📋 쉼표로 이어서 복사</strong>를
+              눌러 엔트리 모델 학습에 붙여넣어요
+            </p>
+          </div>
+          <button
+            onClick={onGoHome}
+            className="mc-focus"
+            style={{
+              padding: "10px 18px",
+              borderRadius: 12,
+              border: "1px solid #C7A876",
+              background: "rgba(255,255,255,0.08)",
+              color: "#FFF6E4",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            ← 처음 화면으로
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+          <ClassChip
+            label="전체"
+            count={entries.length}
+            active={!chosen}
+            onClick={() => setClassId(ALL_CLASSES)}
+          />
+          {classList.map((cls) => (
+            <ClassChip
+              key={cls.id}
+              label={cls.name}
+              count={entries.filter((e) => makeClassKey(e.code) === cls.id).length}
+              active={chosen?.id === cls.id}
+              onClick={() => setClassId(cls.id)}
+            />
+          ))}
+        </div>
+
+        {error ? (
+          <ErrorNote lead="불러오지 못했어요." error={error} color="#F3C6B6" />
+        ) : loading ? (
+          <p style={{ color: "#E8D9BE" }}>불러오는 중...</p>
+        ) : (
+          <SentenceBoard
+            entries={visible}
+            classLabelFor={classLabelFor}
+            showClass={!chosen}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1685,7 +2027,7 @@ function TeacherScreen({ onGoHome }) {
     } catch (err) {
       console.error(err);
       setDeleteError({
-        lead: `${entry.name} 기록을 지우지 못했어요.`,
+        lead: `${entryLabel(entry)}을 지우지 못했어요.`,
         error: err,
       });
     }
@@ -1723,17 +2065,20 @@ function TeacherScreen({ onGoHome }) {
     []
   );
 
+  // 등록된 학급이 없으면 기본 네 반(1반~4반)을 씁니다.
+  const classList = classListFrom(classes);
+
   // 선택한 학급이 삭제되면 전체 보기로 되돌립니다.
   useEffect(() => {
     if (
       selectedClassId !== ALL_CLASSES &&
-      !classes.some((c) => c.id === selectedClassId)
+      !classList.some((c) => c.id === selectedClassId)
     ) {
       setSelectedClassId(ALL_CLASSES);
     }
-  }, [classes, selectedClassId]);
+  }, [classList, selectedClassId]);
 
-  const selectedClass = classes.find((c) => c.id === selectedClassId) || null;
+  const selectedClass = classList.find((c) => c.id === selectedClassId) || null;
 
   const visibleEntries = selectedClass
     ? entries.filter((e) => makeClassKey(e.code) === selectedClass.id)
@@ -1741,8 +2086,14 @@ function TeacherScreen({ onGoHome }) {
 
   /** 쪽지에 붙일 학급 이름. 등록되지 않은 코드는 코드 그대로 보여줍니다. */
   const classLabelFor = (entry) => {
-    const match = classes.find((c) => c.id === makeClassKey(entry.code));
+    const match = classList.find((c) => c.id === makeClassKey(entry.code));
     return match ? match.name : entry.code;
+  };
+
+  /** 엑셀에서 반을 학급 목록 순서(1반, 2반 …)대로 놓기 위한 번호. */
+  const classOrder = (entry) => {
+    const i = classList.findIndex((c) => c.id === makeClassKey(entry.code));
+    return i < 0 ? 999 : i;
   };
 
   const countForClass = (cls) =>
@@ -1750,19 +2101,11 @@ function TeacherScreen({ onGoHome }) {
 
   // 최신순은 moodStore 에서 이미 정렬해 오므로 그대로 둡니다.
   const sortedEntries = [...visibleEntries].sort((a, b) => {
-    if (sortBy === "name") {
-      return String(a.name).localeCompare(String(b.name), "ko");
-    }
     if (sortBy === "emotion") {
-      const diff = emotionOrder(a.emotionId) - emotionOrder(b.emotionId);
-      return diff !== 0
-        ? diff
-        : String(a.name).localeCompare(String(b.name), "ko");
+      return emotionOrder(a.emotionId) - emotionOrder(b.emotionId);
     }
     return 0;
   });
-
-  const colorGroups = groupByColor(sortedEntries);
 
   /**
    * 전체 보기에서 기록을 반별로 묶습니다.
@@ -1776,7 +2119,7 @@ function TeacherScreen({ onGoHome }) {
     for (const entry of sortedEntries) {
       const key = makeClassKey(entry.code);
       if (!byKey.has(key)) {
-        const registered = classes.find((c) => c.id === key);
+        const registered = classList.find((c) => c.id === key);
         byKey.set(key, {
           key,
           label: registered ? registered.name : entry.code,
@@ -1789,6 +2132,7 @@ function TeacherScreen({ onGoHome }) {
     classGroups.push(...byKey.values());
     classGroups.sort((a, b) => {
       if (a.registered !== b.registered) return a.registered ? -1 : 1;
+      if (a.registered) return classOrder(a.entries[0]) - classOrder(b.entries[0]);
       return b.entries.length - a.entries.length;
     });
   }
@@ -1862,7 +2206,7 @@ function TeacherScreen({ onGoHome }) {
             active={selectedClassId === ALL_CLASSES}
             onClick={() => setSelectedClassId(ALL_CLASSES)}
           />
-          {classes.map((cls) => (
+          {classList.map((cls) => (
             <ClassChip
               key={cls.id}
               label={cls.name}
@@ -2002,14 +2346,10 @@ function TeacherScreen({ onGoHome }) {
               ))}
               <button
                 onClick={() =>
-                  downloadColorCsv({
-                    groups: colorGroups,
-                    classLabelFor,
-                    fileLabel: `${dateKey}_${selectedClass ? selectedClass.name : "전체"}`,
-                  })
+                  downloadAllCsv({ entries, classLabelFor, classOrder, dateKey })
                 }
                 className="mc-focus"
-                title="지금 보이는 기록을 색깔별로 정리해서 엑셀 파일로 내려받아요"
+                title="오늘 기록 전체(모든 반)를 반 → 색깔 순서로 정리해서 엑셀 파일로 내려받아요"
                 style={{
                   marginLeft: "auto",
                   border: "1px solid #C7A876",
@@ -2022,26 +2362,17 @@ function TeacherScreen({ onGoHome }) {
                   cursor: "pointer",
                 }}
               >
-                📥 색깔별로 엑셀 저장
+                📥 전체 데이터 엑셀로 받기
               </button>
             </div>
 
             {viewBy === "color" ? (
-              <>
-                <ColorBar groups={colorGroups} total={visibleEntries.length} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-                  {colorGroups.map((group) => (
-                    <ColorSection
-                      key={group.id}
-                      group={group}
-                      total={visibleEntries.length}
-                      showClassColumn={!selectedClass}
-                      classLabelFor={classLabelFor}
-                      onDelete={handleDeleteEntry}
-                    />
-                  ))}
-                </div>
-              </>
+              <SentenceBoard
+                entries={sortedEntries}
+                classLabelFor={classLabelFor}
+                showClass={!selectedClass}
+                onDelete={handleDeleteEntry}
+              />
             ) : selectedClass ? (
               <EntryTable
                 entries={sortedEntries}
@@ -2110,7 +2441,7 @@ function TeacherScreen({ onGoHome }) {
 /* ---------- 루트 ---------- */
 
 export default function MoodCheckIn() {
-  const [session, setSession] = useState(null); // {role:'student', name, code} | {role:'teacher'}
+  const [session, setSession] = useState(null); // {role:'student', code, className, sessionId} | {role:'data'} | {role:'teacher'}
 
   if (!isFirebaseConfigured) {
     return (
@@ -2127,6 +2458,9 @@ export default function MoodCheckIn() {
       {!session && <LoginScreen onEnter={setSession} />}
       {session?.role === "student" && (
         <StudentScreen student={session} onGoHome={() => setSession(null)} />
+      )}
+      {session?.role === "data" && (
+        <DataScreen onGoHome={() => setSession(null)} />
       )}
       {session?.role === "teacher" && (
         <TeacherScreen onGoHome={() => setSession(null)} />

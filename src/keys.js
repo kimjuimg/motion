@@ -21,3 +21,18 @@ export function makeStudentKey(code, name) {
   const cleaned = raw.replace(/[/\\.#$[\]]/g, "-").trim();
   return cleaned.slice(0, 120) || "unknown";
 }
+
+/**
+ * 이름을 받지 않으므로 학생이 들어올 때마다 만든 임의의 세션 id 로 문서를 나눕니다.
+ * 같은 세션에서 "다시 선택하기" 로 고치면 자기 기록만 바뀌고,
+ * 처음 화면으로 나갔다 다시 들어오면(공용 태블릿의 다음 학생) 새 기록이 됩니다.
+ */
+export function makeEntryKey(code, sessionId) {
+  return `${makeClassKey(code)}__${sessionId}`.slice(0, 120);
+}
+
+/** 세션 id. 추측하기 어려운 임의의 문자열이면 충분합니다. */
+export function newSessionId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
