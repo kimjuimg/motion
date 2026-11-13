@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { isFirebaseConfigured } from "./firebaseConfig";
 import { makeClassKey } from "./keys";
+import { QUADRANTS, EMOTIONS, findEmotion, emotionOrder } from "./emotions";
 
 /**
  * Firebase SDK 는 첫 화면에 필요하지 않습니다.
@@ -42,49 +43,7 @@ function subscribeLazily(start, onError) {
 
 /* ---------- 데이터 ---------- */
 
-/**
- * 고를 수 있는 감정.
- *
- * 색깔이 같은 것끼리 한 갈래입니다 — 노랑은 기쁨, 초록은 평온, 보라는 슬픔,
- * 주황은 화남과 두려움, 베이지는 지침. 여기 적은 순서가 곧 학생 화면에
- * 놓이는 순서이자 선생님 화면 "감정순" 정렬의 순서이므로, 새 감정은 같은
- * 갈래 옆에 끼워 넣어야 비슷한 마음끼리 붙어서 보입니다.
- *
- * id 는 Firestore 에 그대로 저장되는 값이라 한 번 정하면 바꾸지 마세요.
- * 바꾸면 그 전에 쌓인 기록이 "알 수 없음" 으로 보입니다.
- */
-const EMOTIONS = [
-  { id: "excited", emoji: "😆", label: "신남", color: "#F3CD5C" },
-  { id: "happy", emoji: "😊", label: "행복", color: "#F3CD5C" },
-  { id: "fun", emoji: "🤣", label: "재미있는", color: "#F3CD5C" },
-  { id: "blessed", emoji: "🥰", label: "축복받은", color: "#F3CD5C" },
-  { id: "touched", emoji: "🥲", label: "감동적인", color: "#F3CD5C" },
-
-  { id: "calm", emoji: "😌", label: "편안", color: "#9DBF8E" },
-  { id: "meh", emoji: "😐", label: "무덤덤", color: "#9DBF8E" },
-
-  { id: "sad", emoji: "😢", label: "슬픔", color: "#ACA0D8" },
-  { id: "down", emoji: "😔", label: "속상", color: "#ACA0D8" },
-  { id: "depressed", emoji: "😞", label: "우울한", color: "#ACA0D8" },
-  { id: "disappointed", emoji: "😕", label: "실망스러운", color: "#ACA0D8" },
-  { id: "pessimistic", emoji: "😒", label: "비관적인", color: "#ACA0D8" },
-  { id: "lonely", emoji: "🧍", label: "고독한", color: "#ACA0D8" },
-  { id: "leftout", emoji: "🙍", label: "소외된", color: "#ACA0D8" },
-
-  { id: "angry", emoji: "😠", label: "화남", color: "#E28B6D" },
-  { id: "enraged", emoji: "😡", label: "격분한", color: "#E28B6D" },
-  { id: "furious", emoji: "🤬", label: "화가 치밀어 오른", color: "#E28B6D" },
-  { id: "stressed", emoji: "😫", label: "스트레스 받는", color: "#E28B6D" },
-  { id: "anxious", emoji: "😰", label: "불안", color: "#E28B6D" },
-  { id: "scared", emoji: "😨", label: "겁먹은", color: "#E28B6D" },
-  { id: "troubled", emoji: "🤯", label: "골치아픈", color: "#E28B6D" },
-
-  { id: "tired", emoji: "😴", label: "피곤", color: "#D6C6A8" },
-  { id: "drained", emoji: "😵", label: "진이 빠진", color: "#D6C6A8" },
-  { id: "listless", emoji: "😑", label: "의욕없는", color: "#D6C6A8" },
-];
-
-const EMOTION_BY_ID = Object.fromEntries(EMOTIONS.map((e) => [e.id, e]));
+/* 고를 수 있는 감정은 무드 미터 100개입니다 — src/emotions.js 참고. */
 
 /**
  * 에러를 화면에 보여줄 문장으로 바꿉니다.
@@ -138,21 +97,12 @@ function ErrorNote({ lead, error, color, style }) {
   );
 }
 
-const FALLBACK_EMOTION = {
-  id: "unknown",
-  emoji: "❔",
-  label: "알 수 없음",
-  color: "#D6C6A8",
-};
-
 /**
  * 선생님 화면 진입 코드.
  * 이 값은 브라우저 번들에 포함되므로 진짜 보안 장치가 아니라 교실용 칸막이입니다.
  * 바꾸려면 아래 기본값을 수정하거나, 배포 환경변수 VITE_TEACHER_CODE 를 설정하세요.
  */
 const TEACHER_CODE = import.meta.env.VITE_TEACHER_CODE || "motion2026";
-/** 감정 목록에 적힌 순서. 감정순 정렬에서 같은 감정끼리 묶는 데 씁니다. */
-const EMOTION_ORDER = Object.fromEntries(EMOTIONS.map((e, i) => [e.id, i]));
 
 const SORT_OPTIONS = [
   { id: "recent", label: "최신순" },
@@ -529,9 +479,200 @@ const inputStyle = {
   background: "#FFFCF4",
 };
 
+/* ---------- 학생 화면: 무드 미터 감정 고르기 ---------- */
+
+/**
+ * 무드 미터 방식으로 두 단계에 걸쳐 고릅니다.
+ * 1) 네 가지 색 중 지금 마음에 가까운 칸 (활력 × 쾌적함)
+ * 2) 그 칸의 감정 25개(5×5) 중 딱 맞는 낱말
+ * 100개를 한꺼번에 늘어놓으면 휴대폰에서 한참 스크롤해야 하고, 무엇보다
+ * "먼저 큰 갈래를 느끼고 → 정확한 이름을 찾는" 무드 미터의 순서가 사라집니다.
+ */
+function MoodMeterPicker({ quadrant, onQuadrant, selected, onSelect }) {
+  const q = QUADRANTS.find((x) => x.id === quadrant);
+
+  if (!q) {
+    return (
+      <div>
+        <p style={{ fontSize: 13, color: "#7A6A4E", margin: "0 0 8px" }}>
+          지금 마음은 어느 색에 가까워요?
+        </p>
+        <div style={{ display: "flex", gap: 6 }}>
+          {/* 세로축: 활력 */}
+          <div
+            aria-hidden
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-around",
+              fontSize: 11,
+              color: "#9C8A6E",
+              writingMode: "vertical-rl",
+              transform: "rotate(180deg)",
+              textAlign: "center",
+            }}
+          >
+            <span>활력 낮음</span>
+            <span>활력 높음</span>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+            }}
+          >
+            {QUADRANTS.map((x) => (
+              <button
+                key={x.id}
+                onClick={() => onQuadrant(x.id)}
+                className="mc-emo-btn mc-focus"
+                style={{
+                  border: "none",
+                  borderRadius: 16,
+                  padding: "18px 8px",
+                  cursor: "pointer",
+                  background: `linear-gradient(135deg, ${x.columns[0]}, ${x.columns[4]})`,
+                  color: x.textColor,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                  minHeight: 112,
+                  justifyContent: "center",
+                }}
+              >
+                <span style={{ fontSize: 34, lineHeight: 1 }}>{x.emoji}</span>
+                <span style={{ fontSize: 15, fontWeight: 700 }}>{x.title}</span>
+                <span style={{ fontSize: 11, opacity: 0.85 }}>{x.hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div
+          aria-hidden
+          style={{
+            display: "flex",
+            justifyContent: "space-around",
+            fontSize: 11,
+            color: "#9C8A6E",
+            marginTop: 6,
+            paddingLeft: 20,
+          }}
+        >
+          <span>← 쾌적함 낮음</span>
+          <span>쾌적함 높음 →</span>
+        </div>
+      </div>
+    );
+  }
+
+  const emotions = EMOTIONS.filter((e) => e.quadrant === q.id);
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <p style={{ fontSize: 13, color: "#7A6A4E", margin: 0 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 10,
+              height: 10,
+              borderRadius: 3,
+              background: q.color,
+              marginRight: 6,
+            }}
+          />
+          <strong>{q.title}</strong> — 딱 맞는 낱말을 골라요
+        </p>
+        <button
+          onClick={() => onQuadrant(null)}
+          className="mc-focus"
+          style={{
+            border: "1px solid #E2D4B4",
+            background: "transparent",
+            borderRadius: 999,
+            padding: "4px 10px",
+            fontSize: 12,
+            color: "#9C8A6E",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ← 색 다시 고르기
+        </button>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gap: 4,
+        }}
+      >
+        {emotions.map((emo) => {
+          const isSel = selected?.id === emo.id;
+          return (
+            <button
+              key={emo.id}
+              onClick={() => onSelect(emo)}
+              aria-pressed={isSel}
+              title={`${emo.label} (${emo.en})`}
+              className="mc-emo-btn mc-focus"
+              style={{
+                border: isSel ? "3px solid #3A2A14" : "3px solid transparent",
+                background: emo.color,
+                color: emo.textColor,
+                borderRadius: 10,
+                padding: "8px 2px 6px",
+                cursor: "pointer",
+                boxShadow: isSel ? "0 6px 14px rgba(0,0,0,0.3)" : "none",
+                transform: isSel ? "scale(1.06)" : undefined,
+                position: "relative",
+                zIndex: isSel ? 1 : 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                minHeight: 84,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontSize: 24, lineHeight: 1.1 }}>{emo.emoji}</div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  marginTop: 4,
+                  fontWeight: 700,
+                  lineHeight: 1.25,
+                  // 한국어는 낱말 단위로 줄을 바꿔야 읽기 쉽습니다.
+                  wordBreak: "keep-all",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {emo.label}
+              </div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 1 }}>{emo.en}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- 화면: 학생 - 감정 선택 ---------- */
 
 function StudentScreen({ student, onGoHome }) {
+  const [quadrant, setQuadrant] = useState(null);
   const [selected, setSelected] = useState(null);
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState("idle"); // idle | saving | done | error
@@ -568,7 +709,22 @@ function StudentScreen({ student, onGoHome }) {
             animation: "mc-pop 0.3s ease",
           }}
         >
-          <div style={{ fontSize: 56, marginBottom: 10 }}>{selected.emoji}</div>
+          <div
+            style={{
+              width: 92,
+              height: 92,
+              margin: "0 auto 12px",
+              borderRadius: 24,
+              background: selected.color,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 52,
+              boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
+            }}
+          >
+            {selected.emoji}
+          </div>
           <p style={{ color: "#9C8A6E", fontSize: 14, margin: "0 0 4px" }}>
             {student.name}님의 <strong>{selected.label}</strong> 마음을 잘 전달했어요
           </p>
@@ -590,6 +746,7 @@ function StudentScreen({ student, onGoHome }) {
             <button
               onClick={() => {
                 setStatus("idle");
+                setQuadrant(null);
                 setSelected(null);
                 setReason("");
               }}
@@ -641,60 +798,15 @@ function StudentScreen({ student, onGoHome }) {
           {student.name}님, 오늘 기분이 어때요?
         </h1>
 
-        {/*
-          감정이 24개라 3칸 고정이면 8줄이 되어 화면 밖으로 밀려납니다.
-          폭에 맞춰 칸 수가 늘도록 해서, 좁은 휴대폰에서는 3칸, 넓은 화면에서는
-          4~5칸으로 접힙니다.
-        */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))",
-            gap: 8,
+        <MoodMeterPicker
+          quadrant={quadrant}
+          onQuadrant={(q) => {
+            setQuadrant(q);
+            setSelected(null);
           }}
-        >
-          {EMOTIONS.map((emo) => {
-            const isSel = selected?.id === emo.id;
-            return (
-              <button
-                key={emo.id}
-                onClick={() => setSelected(emo)}
-                aria-pressed={isSel}
-                className="mc-emo-btn mc-focus"
-                style={{
-                  border: isSel ? "2px solid #7A4F2B" : "1px solid #EADFC5",
-                  background: isSel ? emo.color : "#FFFCF4",
-                  borderRadius: 14,
-                  padding: "12px 5px",
-                  cursor: "pointer",
-                  boxShadow: isSel ? "0 6px 14px rgba(122,79,43,0.25)" : "none",
-                  // 이름이 두 줄인 감정("화가 치밀어 오른")과 한 줄인 감정이
-                  // 섞여 있어도 칸 높이가 들쭉날쭉하지 않게 맞춥니다.
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "flex-start",
-                  minHeight: 88,
-                }}
-              >
-                <div style={{ fontSize: 27, lineHeight: 1.1 }}>{emo.emoji}</div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    marginTop: 5,
-                    color: "#5B4A30",
-                    fontWeight: isSel ? 700 : 400,
-                    lineHeight: 1.3,
-                    // 한국어는 낱말 단위로 줄을 바꿔야 읽기 쉽습니다.
-                    wordBreak: "keep-all",
-                  }}
-                >
-                  {emo.label}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+          selected={selected}
+          onSelect={setSelected}
+        />
 
         <label
           style={{
@@ -1047,13 +1159,45 @@ function ClassManager({ classes, onClose }) {
  * (하나도 없는 날에는 요약 줄 대신 "아직 전달된 마음이 없어요" 가 뜹니다.)
  */
 function EmotionSummary({ entries, compact = false }) {
+  const resolved = entries.map((e) => findEmotion(e.emotionId));
   const counts = EMOTIONS.map((emo) => ({
     ...emo,
-    count: entries.filter((e) => e.emotionId === emo.id).length,
+    count: resolved.filter((r) => r === emo).length,
   })).filter((c) => c.count > 0);
+
+  // 무드 미터 네 칸(빨강·노랑·파랑·초록)별 인원
+  const quadrantCounts = QUADRANTS.map((q) => ({
+    ...q,
+    count: resolved.filter((r) => r.quadrant === q.id).length,
+  })).filter((q) => q.count > 0);
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? 6 : 8 }}>
+      {quadrantCounts.map((q) => (
+        <div
+          key={q.id}
+          title={`${q.title} (${q.hint})`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: q.color,
+            color: q.textColor,
+            borderRadius: 999,
+            padding: compact ? "4px 10px" : "6px 12px",
+            fontSize: compact ? 12 : 13,
+            fontWeight: 700,
+          }}
+        >
+          {q.label} {q.count}
+        </div>
+      ))}
+      {quadrantCounts.length > 0 && (
+        <span
+          aria-hidden
+          style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.25)" }}
+        />
+      )}
       {counts.map((c) => (
         <div
           key={c.id}
@@ -1073,7 +1217,7 @@ function EmotionSummary({ entries, compact = false }) {
           <span
             style={{
               background: c.color,
-              color: "#4A3418",
+              color: c.textColor,
               borderRadius: 999,
               minWidth: 18,
               textAlign: "center",
@@ -1196,7 +1340,7 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
         </thead>
         <tbody>
           {entries.map((entry, i) => {
-            const emotion = EMOTION_BY_ID[entry.emotionId] || FALLBACK_EMOTION;
+            const emotion = findEmotion(entry.emotionId);
             return (
               <tr
                 key={entry.id}
@@ -1212,7 +1356,7 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
                       alignItems: "center",
                       gap: 6,
                       background: emotion.color,
-                      color: "#4A3418",
+                      color: emotion.textColor,
                       borderRadius: 999,
                       padding: "4px 11px",
                       fontWeight: 700,
@@ -1379,8 +1523,7 @@ function TeacherScreen({ onGoHome }) {
       return String(a.name).localeCompare(String(b.name), "ko");
     }
     if (sortBy === "emotion") {
-      const diff =
-        (EMOTION_ORDER[a.emotionId] ?? 99) - (EMOTION_ORDER[b.emotionId] ?? 99);
+      const diff = emotionOrder(a.emotionId) - emotionOrder(b.emotionId);
       return diff !== 0
         ? diff
         : String(a.name).localeCompare(String(b.name), "ko");
