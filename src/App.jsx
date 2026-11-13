@@ -161,6 +161,8 @@ function GlobalStyle() {
       }
       .mc-emo-btn { transition: transform 0.15s ease, box-shadow 0.15s ease; }
       .mc-emo-btn:hover { transform: translateY(-3px); }
+      /* 이유 칸의 예시 문장은 진짜 답처럼 보이지 않게 흐리게 */
+      .mc-reason::placeholder { color: #CDBF9F; opacity: 1; font-style: italic; }
       @media (prefers-reduced-motion: reduce) {
         .mc-emo-btn { transition: none !important; animation: none !important; }
       }
@@ -479,6 +481,42 @@ const inputStyle = {
   background: "#FFFCF4",
 };
 
+/* ---------- 학생 화면: 이유 검사 ---------- */
+
+/** 이유는 이만큼은 써야 저장됩니다 (띄어쓰기·문장부호·아래 낱말은 빼고 셉니다). */
+const REASON_MIN_CHARS = 5;
+
+/**
+ * 이유가 되지 않는 낱말. "그냥", "몰라요" 처럼 쓰면 이 낱말을 지우고 남은
+ * 글자 수로 판단하므로, "그냥 그냥 그냥" 도 걸러지고
+ * "그냥 친구랑 놀아서 좋았어요" 는 통과합니다.
+ */
+const FILLER_WORDS = ["그냥", "몰라", "모름", "모르겠", "없음", "없어", "아무거나", "아무것도", "글쎄", "별로"];
+
+/**
+ * 이유를 검사합니다.
+ * @returns 통과하면 null, 아니면 학생에게 보여 줄 안내 문장
+ */
+function checkReason(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return "왜 이런 마음이 들었는지 이유를 써 주세요.";
+
+  let core = trimmed
+    // 띄어쓰기와 문장부호, ㅋㅋ·ㅠㅠ 같은 낱자는 세지 않습니다.
+    .replace(/[\s.,!?~…·'"()\-_^;:]/g, "")
+    .replace(/[ㄱ-ㅎㅏ-ㅣ]/g, "");
+  const hadFiller = FILLER_WORDS.some((w) => core.includes(w));
+  for (const w of FILLER_WORDS) core = core.split(w).join("");
+  // "요요요", "하하하하하" 처럼 같은 글자만 되풀이한 것도 세지 않습니다.
+  if (new Set(core).size < 3) core = "";
+
+  if (core.length >= REASON_MIN_CHARS) return null;
+  if (hadFiller) {
+    return "'그냥', '몰라요' 말고, 어떤 일이 있었는지 조금 더 자세히 써 볼까요?";
+  }
+  return `조금 더 자세히 써 주세요. (${REASON_MIN_CHARS}글자 이상)`;
+}
+
 /* ---------- 학생 화면: 무드 미터 감정 고르기 ---------- */
 
 /**
@@ -677,10 +715,19 @@ function StudentScreen({ student, onGoHome }) {
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState("idle"); // idle | saving | done | error
   const [saveError, setSaveError] = useState(null);
+  // 안내 문장은 학생이 쓰기 시작했거나 전달을 눌러 본 뒤에만 보여 줍니다.
+  // 이유 칸이 뜨자마자 빨간 글씨부터 보이면 혼나는 느낌이 듭니다.
+  const [reasonTouched, setReasonTouched] = useState(false);
   const dateKey = getTodayKey();
+  const reasonProblem = checkReason(reason);
+  const canSubmit = Boolean(selected) && !reasonProblem && status !== "saving";
+  const exampleText =
+    QUADRANTS.find((q) => q.id === selected?.quadrant)?.example ||
+    "예) 쉬는 시간에 친구와 놀아서 즐거웠어요";
 
   const handleSubmit = async () => {
-    if (!selected) return;
+    setReasonTouched(true);
+    if (!selected || reasonProblem) return;
     setStatus("saving");
     try {
       const { saveMood } = await loadMoodStore();
@@ -749,6 +796,7 @@ function StudentScreen({ student, onGoHome }) {
                 setQuadrant(null);
                 setSelected(null);
                 setReason("");
+                setReasonTouched(false);
               }}
               className="mc-focus"
               style={{
@@ -808,28 +856,58 @@ function StudentScreen({ student, onGoHome }) {
           onSelect={setSelected}
         />
 
-        <label
-          style={{
-            display: "block",
-            fontSize: 13,
-            color: "#7A6A4E",
-            margin: "20px 0 6px",
-          }}
-        >
-          이유 (선택)
-        </label>
-        <textarea
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          maxLength={200}
-          placeholder="한 줄로 이야기해 볼까요?"
-          className="mc-focus"
-          style={{
-            ...inputStyle,
-            minHeight: 60,
-            resize: "vertical",
-          }}
-        />
+        {/* 이유 칸은 감정을 고른 다음에 나타납니다. */}
+        {selected && (
+          <>
+            <label
+              htmlFor="mc-reason"
+              style={{
+                display: "block",
+                fontSize: 13,
+                color: "#7A6A4E",
+                margin: "20px 0 6px",
+              }}
+            >
+              왜 <strong style={{ color: "#5B4A30" }}>{selected.label}</strong> 마음이
+              들었나요? <span style={{ color: "#C0553A" }}>(꼭 써 주세요)</span>
+            </label>
+            <textarea
+              id="mc-reason"
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setReasonTouched(true);
+              }}
+              maxLength={200}
+              placeholder={exampleText}
+              aria-invalid={reasonTouched && Boolean(reasonProblem)}
+              aria-describedby="mc-reason-hint"
+              className="mc-focus mc-reason"
+              style={{
+                ...inputStyle,
+                minHeight: 60,
+                resize: "vertical",
+                borderColor:
+                  reasonTouched && reasonProblem ? "#E0A48A" : inputStyle.border,
+              }}
+            />
+            <p
+              id="mc-reason-hint"
+              style={{
+                fontSize: 12,
+                margin: "6px 2px 0",
+                lineHeight: 1.5,
+                color: reasonTouched && reasonProblem ? "#C0553A" : "#9C8A6E",
+              }}
+            >
+              {reasonTouched && reasonProblem
+                ? reasonProblem
+                : reasonProblem
+                  ? "어떤 일이 있었는지 한 문장으로 써 주세요."
+                  : "좋아요! 이제 전달할 수 있어요 ✓"}
+            </p>
+          </>
+        )}
 
         {status === "error" && (
           <ErrorNote lead="전달에 실패했어요." error={saveError} />
@@ -837,7 +915,7 @@ function StudentScreen({ student, onGoHome }) {
 
         <button
           onClick={handleSubmit}
-          disabled={!selected || status === "saving"}
+          disabled={!canSubmit}
           className="mc-focus"
           style={{
             width: "100%",
@@ -845,11 +923,11 @@ function StudentScreen({ student, onGoHome }) {
             padding: "13px 0",
             borderRadius: 14,
             border: "none",
-            background: selected ? "#C0724A" : "#DCCBA9",
+            background: canSubmit ? "#C0724A" : "#DCCBA9",
             color: "#FFFDF7",
             fontSize: 16,
             fontWeight: 700,
-            cursor: selected ? "pointer" : "not-allowed",
+            cursor: canSubmit ? "pointer" : "not-allowed",
           }}
         >
           {status === "saving" ? "전달하는 중..." : "기분 전달하기"}
@@ -1307,7 +1385,7 @@ function DeleteEntryButton({ entry, onDelete }) {
   );
 }
 
-function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
+function EntryTable({ entries, showClassColumn, classLabelFor, onDelete, style }) {
   return (
     <div
       className="mc-scrollbar"
@@ -1316,6 +1394,7 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
         borderRadius: 14,
         overflowX: "auto",
         boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
+        ...style,
       }}
     >
       <table
@@ -1430,7 +1509,159 @@ function EntryTable({ entries, showClassColumn, classLabelFor, onDelete }) {
 
 /* ---------- 교사 화면: 게시판 ---------- */
 
+/* ---------- 교사 화면: 색깔별 보기 ---------- */
+
+/**
+ * 색깔별로 보여 줄 순서. 살펴봐야 할 마음(빨강·파랑)이 먼저 오도록
+ * 무드 미터 판의 순서(빨강·노랑·파랑·초록)와 다르게 둡니다.
+ */
+const COLOR_VIEW_ORDER = ["red", "blue", "yellow", "green"];
+
+const VIEW_OPTIONS = [
+  { id: "color", label: "🎨 색깔별" },
+  { id: "class", label: "🏫 반별" },
+];
+
+/** 기록을 무드 미터 네 칸으로 나눕니다. 모르는 감정은 "기타" 로 따로 모읍니다. */
+function groupByColor(entries) {
+  const groups = COLOR_VIEW_ORDER.map((id) => ({
+    ...QUADRANTS.find((q) => q.id === id),
+    entries: [],
+  }));
+  const other = { id: "other", label: "기타", title: "알 수 없는 감정", hint: "", color: "#D6C6A8", textColor: "#4A3418", emoji: "❔", entries: [] };
+  for (const entry of entries) {
+    const q = findEmotion(entry.emotionId).quadrant;
+    (groups.find((g) => g.id === q) || other).entries.push(entry);
+  }
+  return other.entries.length ? [...groups, other] : groups;
+}
+
+/** 네 색이 몇 명씩인지 한 줄 막대로 보여 줍니다. */
+function ColorBar({ groups, total }) {
+  return (
+    <div
+      role="img"
+      aria-label={groups.map((g) => `${g.label} ${g.entries.length}명`).join(", ")}
+      style={{
+        display: "flex",
+        height: 30,
+        borderRadius: 10,
+        overflow: "hidden",
+        boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
+        marginBottom: 22,
+        background: "rgba(255,255,255,0.08)",
+      }}
+    >
+      {groups
+        .filter((g) => g.entries.length > 0)
+        .map((g) => {
+          const pct = Math.round((g.entries.length / total) * 100);
+          return (
+            <div
+              key={g.id}
+              title={`${g.label} · ${g.title}: ${g.entries.length}명 (${pct}%)`}
+              style={{
+                flex: g.entries.length,
+                background: g.color,
+                color: g.textColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 12,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                minWidth: 0,
+              }}
+            >
+              {pct >= 8 && `${g.label} ${pct}%`}
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
+/**
+ * 지금 보이는 기록을 색깔별로 정리해서 CSV(엑셀에서 열림) 파일로 내려받습니다.
+ * 맨 앞의 BOM(﻿) 이 없으면 엑셀이 한글을 깨뜨려서 엽니다.
+ */
+function downloadColorCsv({ groups, classLabelFor, fileLabel }) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header = ["색깔", "마음", "감정", "영어", "이름", "반", "이유", "시간"];
+  const rows = [header];
+  for (const g of groups) {
+    for (const entry of g.entries) {
+      const emo = findEmotion(entry.emotionId);
+      rows.push([
+        g.label,
+        g.title,
+        emo.label,
+        emo.en,
+        entry.name,
+        classLabelFor(entry),
+        entry.reason,
+        formatTime(entry.updatedAt),
+      ]);
+    }
+  }
+  const csv = "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `마음기록_${fileLabel}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 한 색깔의 묶음: 색 띠 머리 + 그 색 학생들의 표. */
+function ColorSection({ group, total, showClassColumn, classLabelFor, onDelete }) {
+  const count = group.entries.length;
+  return (
+    <section>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 10,
+          background: group.color,
+          color: group.textColor,
+          borderRadius: count ? "14px 14px 0 0" : 14,
+          padding: "10px 16px",
+        }}
+      >
+        <span style={{ fontSize: 22 }}>{group.emoji}</span>
+        <h2 style={{ fontSize: 18, margin: 0 }}>
+          {group.label} · {group.title}
+        </h2>
+        {group.hint && (
+          <span style={{ fontSize: 12, opacity: 0.85 }}>{group.hint}</span>
+        )}
+        <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 15 }}>
+          {count}명{total > 0 && ` (${Math.round((count / total) * 100)}%)`}
+        </span>
+      </div>
+      {count > 0 ? (
+        <EntryTable
+          entries={group.entries}
+          showClassColumn={showClassColumn}
+          classLabelFor={classLabelFor}
+          onDelete={onDelete}
+          style={{
+            borderRadius: "0 0 14px 14px",
+            borderLeft: `6px solid ${group.color}`,
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 function TeacherScreen({ onGoHome }) {
+  const [viewBy, setViewBy] = useState("color");
   const [entries, setEntries] = useState([]);
   const [classes, setClasses] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState(ALL_CLASSES);
@@ -1530,6 +1761,8 @@ function TeacherScreen({ onGoHome }) {
     }
     return 0;
   });
+
+  const colorGroups = groupByColor(sortedEntries);
 
   /**
    * 전체 보기에서 기록을 반별로 묶습니다.
@@ -1705,11 +1938,41 @@ function TeacherScreen({ onGoHome }) {
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems: "center",
                 gap: 8,
-                marginBottom: 10,
+                marginBottom: 14,
               }}
             >
+              <span style={{ color: "#E8D9BE", fontSize: 13, opacity: 0.8 }}>
+                보기
+              </span>
+              {VIEW_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setViewBy(opt.id)}
+                  aria-pressed={viewBy === opt.id}
+                  className="mc-focus"
+                  style={{
+                    border:
+                      viewBy === opt.id ? "1px solid #FFF6E4" : "1px solid #8E6E48",
+                    background:
+                      viewBy === opt.id ? "#FFF6E4" : "rgba(255,255,255,0.08)",
+                    color: viewBy === opt.id ? "#5C4126" : "#E8D9BE",
+                    fontWeight: viewBy === opt.id ? 700 : 400,
+                    borderRadius: 999,
+                    padding: "5px 13px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <span
+                aria-hidden
+                style={{ width: 1, height: 18, background: "#8E6E48", margin: "0 4px" }}
+              />
               <span style={{ color: "#E8D9BE", fontSize: 13, opacity: 0.8 }}>
                 정렬
               </span>
@@ -1737,9 +2000,49 @@ function TeacherScreen({ onGoHome }) {
                   {opt.label}
                 </button>
               ))}
+              <button
+                onClick={() =>
+                  downloadColorCsv({
+                    groups: colorGroups,
+                    classLabelFor,
+                    fileLabel: `${dateKey}_${selectedClass ? selectedClass.name : "전체"}`,
+                  })
+                }
+                className="mc-focus"
+                title="지금 보이는 기록을 색깔별로 정리해서 엑셀 파일로 내려받아요"
+                style={{
+                  marginLeft: "auto",
+                  border: "1px solid #C7A876",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "#FFF6E4",
+                  borderRadius: 999,
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                📥 색깔별로 엑셀 저장
+              </button>
             </div>
 
-            {selectedClass ? (
+            {viewBy === "color" ? (
+              <>
+                <ColorBar groups={colorGroups} total={visibleEntries.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                  {colorGroups.map((group) => (
+                    <ColorSection
+                      key={group.id}
+                      group={group}
+                      total={visibleEntries.length}
+                      showClassColumn={!selectedClass}
+                      classLabelFor={classLabelFor}
+                      onDelete={handleDeleteEntry}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : selectedClass ? (
               <EntryTable
                 entries={sortedEntries}
                 showClassColumn={false}

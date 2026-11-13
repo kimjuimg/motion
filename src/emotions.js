@@ -20,6 +20,8 @@
 export const QUADRANTS = [
   {
     id: "red",
+    // 이유 칸에 흐리게 보여 주는 예시 문장
+    example: "예) 동생이 내 물건을 허락 없이 써서 화가 났어요",
     label: "빨강",
     title: "화나고 불안해요",
     hint: "활력 높음 · 쾌적함 낮음",
@@ -38,6 +40,8 @@ export const QUADRANTS = [
   },
   {
     id: "yellow",
+    // 이유 칸에 흐리게 보여 주는 예시 문장
+    example: "예) 체육 시간에 우리 팀이 이겨서 신났어요",
     label: "노랑",
     title: "신나고 즐거워요",
     hint: "활력 높음 · 쾌적함 높음",
@@ -55,6 +59,8 @@ export const QUADRANTS = [
   },
   {
     id: "blue",
+    // 이유 칸에 흐리게 보여 주는 예시 문장
+    example: "예) 어젯밤 늦게 자서 아침부터 피곤해요",
     label: "파랑",
     title: "슬프고 지쳐요",
     hint: "활력 낮음 · 쾌적함 낮음",
@@ -72,6 +78,8 @@ export const QUADRANTS = [
   },
   {
     id: "green",
+    // 이유 칸에 흐리게 보여 주는 예시 문장
+    example: "예) 아침에 가족과 이야기하며 걸어와서 마음이 편해요",
     label: "초록",
     title: "편안하고 차분해요",
     hint: "활력 낮음 · 쾌적함 높음",
